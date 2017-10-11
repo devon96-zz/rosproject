@@ -4,108 +4,126 @@ import rospy
 import tf
 import roslib
 import math
-from std_msgs.msg import String
-from geometry_msgs.msg import PointStamped, Point, Twist
-from std_msgs.msg import Header
+from std_msgs.msg import String, Header
+from geometry_msgs.msg import PointStamped, Point, Twist, Pose
 from sensor_msgs.msg import LaserScan
+from visualization_msgs.msg import Marker, MarkerArray
+from nav_msgs.msg import OccupancyGrid, Odometry
 
 
-class MyRobot:
+def add(x, y, r, g, b, frame):
+    mr = Marker()
+    mr.header.frame_id = frame
+    mr.ns = "basic"
+    mr.id = 10
+    mr.type = mr.ARROW
+    mr.action = mr.ADD
+
+    mr.points.append(Point(x=x, y=y, z=0.05))
+    mr.points.append(Point(x=x + 0.5, y=y, z=0.05))
+
+    mr.scale.x = 0.05
+    mr.scale.y = 0.1
+    mr.scale.z = 0.05
+    mr.color.r = r
+    mr.color.g = g
+    mr.color.b = b
+    mr.color.a = 1.0
+
+    ma = MarkerArray()
+    ma.markers.append(mr)
+    map_pub.publish(ma)
+
+
+def add_robot_model():
+    mr = Marker()
+    mr.header.frame_id = "/base_link"
+    mr.ns = "basic"
+    mr.id = 2
+    mr.type = mr.CUBE
+    mr.action = mr.ADD
+
+    mr.pose.position.x = 0
+    mr.pose.position.y = 0
+    mr.pose.position.z = 0
+
+    mr.scale.x = 0.1
+    mr.scale.y = 0.1
+    mr.scale.z = 0.1
+    mr.color.r = 0
+    mr.color.g = 0
+    mr.color.b = 1
+    mr.color.a = 1.0
+
+    ma = MarkerArray()
+    ma.markers.append(mr)
+    map_pub.publish(ma)
+
+
+class MapTransform():
     def __init__(self):
-        self.publisher = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
+        self.pub = rospy.Publisher(
+            "/real_robot_pos", OccupancyGrid, queue_size=10)
+        map_sub = rospy.Subscriber("/map", OccupancyGrid, self.get_old_map)
+        get_odom_sub = rospy.Subscriber(
+            "/base_pose_ground_truth", Odometry, self.get_odom)
 
-    def accelerate(self):
-        tw = Twist()
-        tw.linear.x = 5
-        self.publisher.publish(tw)
-        rospy.Timer(rospy.Duration(2), self.deaccelerate, oneshot=True)
+        self.listener = tf.TransformListener()
 
-    def deaccelerate(self):
-        tw = Twist()
-        tw.angular.z = 0
-        self.publisher.publish(tw)
+    def get_old_map(self, data):
+        self.old_map = data
+        self.start_x = data.info.origin.position.x
+        self.start_y = data.info.origin.position.y
+        self.start_z = data.info.origin.position.z
 
+    def get_odom(self, data):
+        self.robot_pose = data.pose
 
-def transformToBase(x, y):
-    try:
-        ps = PointStamped(header=Header(stamp=rospy.Time.now(),
-                                        frame_id="/base_laser_link"),
-                          point=Point(x, y, 0))
+    def transformmap(self):
+        new_map = self.old_map
 
-        # print "TRANSFORM"
-        # print listener.transformPoint("/base_link", ps)
-        # print
-        # print "ORIGINAL"
-        # print Point(x, y, 0)
-    except:
-        return
+        try:
 
+            transformed_pose = self.listener.lookupTransform(
+                "/base_link", "/odom", rospy.Time(0))
 
-def mover():
-    pub = rospy.Publisher('cmd_vel', Twist)
-    rospy.init_node('robot_mover')
+            print
+            print self.robot_pose.pose.position.x, self.start_x
+            print self.robot_pose.pose.position.y, self.start_y
+            print
 
-    twist = Twist()
-    twist.linear.x = 1  # move forward at 0.1 m/s
+            #new_map.info.origin.position.x = transformed_pose[0][0] + self.start_x
+            #new_map.info.origin.position.y = transformed_pose[0][1] + self.start_y
+            new_map.info.origin.position.x = self.robot_pose.pose.position.x
+            new_map.info.origin.position.y = self.robot_pose.pose.position.y
+            new_map.info.origin.position.z = transformed_pose[0][2]
 
-    rospy.loginfo("Moving the robot forward.")
-    pub.publish(twist)
-    rospy.sleep(1)
+            new_map.info.origin.orientation.x = transformed_pose[1][0]
+            new_map.info.origin.orientation.y = transformed_pose[1][1]
+            new_map.info.origin.orientation.z = transformed_pose[1][2]
 
-    rospy.loginfo("Moving the robot backward.")
-    twist.linear.x = 2  # move backward at 0.1 m/s
-    pub.publish(twist)
-    rospy.sleep(10)
-
-    rospy.loginfo("Turning the robot left.")
-    twist = Twist()
-    twist.angular.z = 0.5
-    pub.publish(twist)
-    rospy.sleep(1)
-
-    rospy.loginfo("Turning the robot right.")
-    twist.angular.z = -0.5
-    pub.publish(twist)
-    rospy.sleep(1)
-
-    rospy.loginfo("Stopping!")
-    twist = Twist()
-    pub.publish(twist)
-
-    rospy.loginfo("Node exiting.")
-
-
-def checkDistance(laserScan):
-    curAngle = laserScan.angle_min
-    inc = laserScan.angle_increment
-
-    for range in laserScan.ranges:
-        x = range * math.cos(curAngle)
-        y = range * math.sin(curAngle)
-        transformToBase(x, y)
-        curAngle = curAngle + inc
+            self.pub.publish(new_map)
+        except Exception, e:
+            print str(e)
 
 
 if __name__ == '__main__':
     try:
         publisher = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
+        map_pub = rospy.Publisher("/map_rviz", MarkerArray, queue_size=10)
+        mapTransform = MapTransform()
+
         rospy.init_node('my_robot_node', anonymous=True)
-        #robot = MyRobot()
-        # robot.accelerate()
-        start = rospy.Time.now()
-        duration = rospy.Duration(2)
-        rate = rospy.Rate(5)
-        while (rospy.Time.now() - start < duration):
-            print "hello"
+
+        rate = rospy.Rate(10)
+        while not rospy.is_shutdown():
+
+            add_robot_model()
+            mapTransform.transformmap()
             tw = Twist()
-            tw.linear.x = 5
+            tw.linear.x = 0.01
             publisher.publish(tw)
             rate.sleep()
 
-        listener = tf.TransformListener()
-        laserSub = rospy.Subscriber('/base_scan', LaserScan, checkDistance)
-
-        rospy.spin()
-        mover()
     except rospy.ROSInterruptException:
         pass
