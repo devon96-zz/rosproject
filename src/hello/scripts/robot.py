@@ -1,12 +1,8 @@
 #!/usr/bin/env python2
 import rospy
 import tf
-import roslib
-import math
 import numpy as np
-from std_msgs.msg import String, Header
-from geometry_msgs.msg import PointStamped, Point, Twist, Pose
-from sensor_msgs.msg import LaserScan
+from geometry_msgs.msg import Point, Twist
 from visualization_msgs.msg import Marker, MarkerArray
 from nav_msgs.msg import OccupancyGrid, Odometry
 
@@ -18,7 +14,7 @@ class myRobot():
 
         self.rviz_pub = rospy.Publisher(
             "/robot_model", MarkerArray, queue_size=10)
-        self.map_sub = rospy.Subscriber("/map", OccupancyGrid, self.getMap)
+        self.map_sub = rospy.Subscriber("/map", OccupancyGrid, self.get_map)
 
         self.rviz_map_pub = rospy.Publisher(
             "/real_robot_pose", OccupancyGrid, queue_size=10)
@@ -26,12 +22,15 @@ class myRobot():
         self.cells_pub = rospy.Publisher(
             "/cells_boxes", MarkerArray, queue_size=10)
 
+        self.path_pub = rospy.Publisher(
+            "/calculated_path", MarkerArray, queue_size=10)
+
         self.ground_pose_sub = rospy.Subscriber(
-            "/base_pose_ground_truth", Odometry, self.getPose)
+            "/base_pose_ground_truth", Odometry, self.get_pose)
 
         self.tf_listener = tf.TransformListener()
 
-    def getMap(self, data):
+    def get_map(self, data):
         self.mapgrid = data
         self.start_x = data.info.origin.position.x
         self.start_y = data.info.origin.position.y
@@ -74,7 +73,6 @@ class myRobot():
 
     def draw_boxes(self):
         ma = MarkerArray()
-
         ite = 2
 
         for mytuple in self.cells_array:
@@ -99,7 +97,7 @@ class myRobot():
 
         self.cells_pub.publish(ma)
 
-    def getPose(self, robot_pose):
+    def get_pose(self, robot_pose):
         newgrid = self.mapgrid
         newgrid.info.origin.position.x = self.start_x
         newgrid.info.origin.position.y = self.start_y
@@ -127,8 +125,28 @@ class myRobot():
 
         self.rviz_map_pub.publish(newgrid)
 
-    def drawRobot(self):
-        pass
+    def draw_path(self):
+        ma = MarkerArray()
+
+        mr = Marker()
+        mr.header.frame_id = "/map"
+        mr.ns = "basic"
+        mr.id = 2
+        mr.type = mr.LINE_STRIP
+        mr.action = mr.ADD
+        mr.pose.position.x = 0
+        mr.pose.position.y = 0
+        mr.pose.position.z = 0.05
+        mr.points = [Point(x=0, y=0, z=0.05), Point(x=2, y=2, z=0.05)]
+        mr.scale.x = 0.1
+        mr.scale.y = 0.1
+        mr.scale.z = 0.1
+        mr.color.r = 1
+        mr.color.g = 0
+        mr.color.b = 0
+        mr.color.a = 1.0
+        ma = MarkerArray()
+        ma.markers.append(mr)
 
 
 if __name__ == '__main__':
@@ -145,7 +163,7 @@ if __name__ == '__main__':
             # tw.linear.x = 0.1
             vel_pub.publish(tw)
 
-            robot.drawRobot()
+            robot.draw_path()
             try:
                 robot.draw_boxes()
             except:
