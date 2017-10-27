@@ -1,11 +1,12 @@
 #!/usr/bin/env python2
 import rospy
+import rospkg
 import tf
 import numpy as np
 import math
 import pickle
 import heapq
-from itertools import chain
+from itertools import chain, permutations
 from geometry_msgs.msg import Point, Twist
 from visualization_msgs.msg import Marker, MarkerArray
 from nav_msgs.msg import OccupancyGrid, Odometry
@@ -67,14 +68,19 @@ def heuristic_estimate(start, end):
 class myRobot():
     def __init__(self):
 
-        self.cells_array = pickle.load(open("/home/konrad/cells.pickle", "rb"))
+        self.cells_array = pickle.load(
+            open(rospkg.RosPack().get_path('assessment') + "/resources/cells.pickle", "rb"))
 
         self.neighbours = pickle.load(
-            open("/home/konrad/neighbours.pickle", "rb"))
+            open(rospkg.RosPack().get_path('assessment') + "/resources/neighbours.pickle", "rb"))
 
         self.path = []
 
-        self.goal = rospy.get_param("goal3")
+        self.best_path = []
+
+        self.distance = 0
+
+        self.order = []
 
         self.graph = Graph()
 
@@ -170,12 +176,25 @@ class myRobot():
 
         current = finish
         total_path = [finish]
+        distance = 0
 
         while current != start:
-            current = came_from[current]
-            total_path.append(current)
+            try:
+                current = came_from[current]
+                total_path.append(current)
+            except KeyError:
+                self.distance = 999999999999
+                self.path = []
+                return
+
+        for i in range(0, len(total_path) - 2):
+            try:
+                distance += total_path[i].get_weight(total_path[i + 1])
+            except KeyError:
+                distance += total_path[i + 1].get_weight(total_path[i])
 
         total_path = total_path[1:-1]
+        self.distance += distance
         self.path = total_path
 
     def get_map(self, data):
@@ -186,6 +205,32 @@ class myRobot():
 
     def get_pose(self, robot_pose):
         self.robot_pose = robot_pose
+
+    def get_path_permutation(self, start_x, start_y):
+        goal_list = []
+        goal_list_permutations = []
+        distances = []
+        for i in range(5):
+            goal_list.append(rospy.get_param("/goal" + str(i)))
+
+        ite = 0
+        for x in list(permutations(goal_list)):
+            goal_list_permutations.append(list(x))
+            goal_list_permutations[ite].insert(0, [start_x, start_y])
+            ite += 1
+
+        for x in goal_list_permutations:
+            self.graph = Graph()
+            self.init_graph()
+            for y in range(len(x) - 1):
+                self.draw_path(x[y][0], x[y][1], x[y + 1][0], x[y + 1][1], y)
+            distances.append(self.distance)
+            self.distance = 0
+
+        self.best_path = goal_list_permutations[distances.index(
+            min(distances))]
+
+       # print rospy.get_param("/robot_start")
 
     def draw_self(self):
         mr = Marker()
@@ -232,16 +277,16 @@ class myRobot():
         else:
             cell_y = abs(sy - 4.8)
 
-        sx_coord = int(round((sx + 6.0) / self.resolution))
-        sy_coord = int(round((cell_y) / self.resolution))
+        sx_coord = int(round((sx + 6.0) / 0.012))
+        sy_coord = int(round((cell_y) / 0.012))
 
         if fy < 0:
             cell_y = abs(fy) + 4.8
         else:
             cell_y = abs(fy - 4.8)
 
-        fx_coord = int(round((fx + 6.0) / self.resolution))
-        fy_coord = int(round((cell_y) / self.resolution))
+        fx_coord = int(round((fx + 6.0) / 0.012))
+        fy_coord = int(round((cell_y) / 0.012))
 
         self.find_shortest_path(self.find_closest_cell(
             sy_coord, sx_coord), self.find_closest_cell(fy_coord, fx_coord))
@@ -312,23 +357,22 @@ class myRobot():
         cur_y = sy
 
         ma = MarkerArray()
-        for i in range(5):
-            rospy.get_param("/goal" + str(i))[0]
 
-            robot.draw_path(cur_x, cur_y, rospy.get_param(
-                "/goal" + str(i))[0], rospy.get_param("/goal" + str(i))[1], i + 1)
+        ite = 0
+        for i in self.best_path:
+            robot.draw_path(cur_x, cur_y, i[0], i[1], ite)
 
-            cur_x = rospy.get_param("/goal" + str(i))[0]
-            cur_y = rospy.get_param("/goal" + str(i))[1]
+            cur_x = i[0]
+            cur_y = i[1]
 
             mr = Marker()
             mr.header.frame_id = "/map"
             mr.ns = "goals"
-            mr.id = i
+            mr.id = ite
             mr.type = mr.CUBE
             mr.action = mr.ADD
-            mr.pose.position.x = rospy.get_param("/goal" + str(i))[0] - 0.05
-            mr.pose.position.y = rospy.get_param("/goal" + str(i))[1]
+            mr.pose.position.x = i[0] - 0.05
+            mr.pose.position.y = i[1]
             mr.pose.position.z = 0.05
             mr.scale.x = 0.1
             mr.scale.y = 0.1
@@ -338,7 +382,7 @@ class myRobot():
             mr.color.b = 0
             mr.color.a = 1.0
             ma.markers.append(mr)
-
+            ite += 1
         self.goals_pub.publish(ma)
 
 
@@ -350,18 +394,24 @@ if __name__ == '__main__':
 
         rate = rospy.Rate(5)
 
+        got_permutations = False
+        while not got_permutations:
+            try:
+                robot.get_path_permutation(-4.8, -3.6)
+                got_permutations = True
+            except:
+                pass
+
         while not rospy.is_shutdown():
 
             tw = Twist()
             # tw.linear.x = 0.1
             vel_pub.publish(tw)
 
-            try:
-                robot.draw_self()
-                robot.draw_odom()
-                robot.draw_goals(-4.8, -3.6)
-            except Exception as e:
-                print e
+            robot.draw_self()
+            robot.draw_odom()
+            robot.draw_goals(-4.8, -3.6)
+
             rate.sleep()
 
     except rospy.ROSInterruptException:
