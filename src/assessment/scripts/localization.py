@@ -62,7 +62,7 @@ class Localisation():
         x_coord = self.start_x + (y * self.resolution)
         return [x_coord, y_coord]
 
-    def get_closest_expected_obstacle(self, x, y, yaw):
+    def get_closest_expected_obstacle(self, x, y, yaw, id):
         updated_x = 0
         updated_y = 0
         ite = self.resolution
@@ -72,7 +72,7 @@ class Localisation():
             # print math.cos(yaw)
             map_x, map_y = self.frame2grid(x + updated_x, y + updated_y)
             if(self.grid_array[map_x][map_y] == 100):
-                print "OBSTACLE FOUND at", self.grid2frame(map_x, map_y)
+                # print "OBSTACLE FOUND at", self.grid2frame(map_x, map_y)
                 break
             # print map_x, map_y
             ite += self.resolution
@@ -81,7 +81,7 @@ class Localisation():
         mr = Marker()
         mr.header.frame_id = "/map"
         mr.ns = "laser"
-        mr.id = 1
+        mr.id = id
         mr.type = mr.CUBE
         mr.action = mr.ADD
         mr.pose.position.x = x + updated_x - 0.05
@@ -96,6 +96,17 @@ class Localisation():
         mr.color.a = 1.0
         ma.markers.append(mr)
         self.rviz_pub.publish(ma)
+
+    def display_all_lasers(self, robot_x, robot_y, radians):
+
+        ite = 1
+        laser_angle = self.laser_readings.angle_min
+        angle_inc = self.laser_readings.angle_increment
+        for reading in self.laser_readings.ranges:
+            self.get_closest_expected_obstacle(
+                robot_x, robot_y, radians + laser_angle, ite)
+            laser_angle += angle_inc
+            ite += 1
 
 
 if __name__ == '__main__':
@@ -112,13 +123,14 @@ if __name__ == '__main__':
             twist_sub.publish(tw)
             try:
                 yaw = euler_from_quaternion(localisation.tf.lookupTransform(
-                    '/map', '/base_footprint', rospy.Time(0))[1])[2]
+                    '/map', '/base_laser_link', rospy.Time(0))[1])[2]
                 pose = localisation.tf.lookupTransform(
-                    '/map', '/base_footprint', rospy.Time(0))[0]
-                localisation.get_closest_expected_obstacle(
-                    pose[0], pose[1], yaw)
+                    '/map', '/base_laser_link', rospy.Time(0))[0]
 
-                print pose[0], pose[1], math.degrees(yaw)
+                # for
+                # localisation.get_closest_expected_obstacle(
+                #     pose[0], pose[1], yaw)
+                localisation.display_all_lasers(pose[0], pose[1], yaw)
 
                 # print math.degrees(yaw)
 
