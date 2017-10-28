@@ -44,7 +44,7 @@ counter = myCounter()
 for i in range(6, new_array.shape[0] - 6):
     for j in range(6, new_array.shape[1] - 6):
         if new_array[i][j] == 1:
-            for k in range(1, 6):
+            for k in range(1, 3):
                 new_array[i + k][j + k] = 100
                 new_array[i - k][j + k] = 100
                 new_array[i + k][j - k] = 100
@@ -78,7 +78,7 @@ def draw_lines(arr, depth):
                    depth - 1)  # Bottom right
 
 
-draw_lines(new_array, 7)
+draw_lines(new_array, 6)
 
 for i in range(0, new_array.shape[0]):
     for j in range(0, new_array.shape[1]):
@@ -153,8 +153,8 @@ for i in counter.cells_array:
 
 counter.cells_array.append((316, 840, 6, 15))
 counter.neighbors[len(counter.cells_array) -
-                  1] = set([444, len(counter.cells_array)])
-counter.neighbors[444].add(len(counter.cells_array) - 1)
+                  1] = set([225, len(counter.cells_array)])
+counter.neighbors[225].add(len(counter.cells_array) - 1)
 
 counter.cells_array.append((313, 865, 6, 15))
 counter.neighbors[len(counter.cells_array) -
@@ -166,8 +166,8 @@ counter.neighbors[len(counter.cells_array) -
 
 counter.cells_array.append((313, 895, 6, 15))
 counter.neighbors[len(counter.cells_array) -
-                  1] = set([len(counter.cells_array) - 2, 408])
-counter.neighbors[408].add(len(counter.cells_array) - 2)
+                  1] = set([len(counter.cells_array) - 2, 201])
+counter.neighbors[201].add(len(counter.cells_array) - 2)
 
 
 import pickle

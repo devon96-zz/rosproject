@@ -388,7 +388,7 @@ class myRobot():
 
 if __name__ == '__main__':
     try:
-        rospy.init_node('my_robot_node', anonymous=True)
+        rospy.init_node('pathplannig_node', anonymous=True)
         vel_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
         robot = myRobot()
 
