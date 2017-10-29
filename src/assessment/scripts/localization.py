@@ -142,10 +142,12 @@ class Localisation():
                 return ite
                 break
             # print map_x, map_y
-            ite += self.resolution / 2
+            ite += self.resolution
         return ite
 
     def get_position_probability(self, index):
+        import os
+        print os.getpid()
         total_prob = 0
 
         robot_x, robot_y = self.grid2frame(
@@ -156,12 +158,12 @@ class Localisation():
         ite = 1
         laser_angle = self.laser_readings.angle_min
         angle_inc = self.laser_readings.angle_increment
-        for reading in self.laser_readings.ranges[::3]:
+        for reading in self.laser_readings.ranges[::5]:
             obst_dist = self.get_closest_expected_obstacle(
                 robot_x, robot_y, radians + laser_angle)
             total_prob += self.gaussian_p(obst_dist, reading)
 
-            laser_angle += angle_inc * 3
+            laser_angle += angle_inc * 5
             ite += 1
         self.probabilities[index] = total_prob
 
@@ -178,8 +180,14 @@ class Localisation():
         # # Stop the threads
         # for x in processes:
         #     x.join()
+        procs = []
+
         for i in range(1000):
-            self.get_position_probability(i)
+            proc = Process(target=self.get_position_probability, args=(i,))
+            procs.append(proc)
+            proc.start()
+        for i in procs:
+            i.join()
 
         print self.probabilities
 
