@@ -7,37 +7,46 @@ import math
 import pickle
 import heapq
 from itertools import chain
-from geometry_msgs.msg import Point, Twist
+from geometry_msgs.msg import Point, Twist, Quaternion, PointStamped
 from visualization_msgs.msg import Marker, MarkerArray
 from nav_msgs.msg import OccupancyGrid, Odometry
 from sensor_msgs.msg import LaserScan
+from std_msgs.msg import Header
 from time import sleep
 import scipy.stats
 import random
-from multiprocessing.dummy import Pool as ThreadPool
+from numpy import cumsum, sort, sum, searchsorted
+from numpy.random import rand
 
 
 class Localisation():
     def __init__(self):
-        rospy.init_node('localization_node', anonymous=True)
-        laser_sub = rospy.Subscriber(
-            '/noisy_base_scan', LaserScan, self.get_scan)
-        map_sub = rospy.Subscriber('/map', OccupancyGrid, self.get_map)
-        rospy.wait_for_message('/map', OccupancyGrid)
-        pose_sub = rospy.Subscriber(
-            '/base_pose_ground_truth', Odometry, self.get_pose)
-        # odom_sub = rospy.Subscriber(
-        #     '/odom', Odometry, self.update_particles_positions)
-        self.rviz_pub = rospy.Publisher(
-            '/laserscanner', MarkerArray, queue_size=10)
-        self.particle_pub = rospy.Publisher(
-            '/particles', MarkerArray, queue_size=1000)
-        self.tf = tf.TransformListener()
+
         self.laser_readings = LaserScan()
 
         self.particles = []
         self.probabilities = [0] * 1000
         self.init_particles()
+        self.norm = scipy.stats.norm(0, 0.1)
+        self.current_x = 0
+        self.current_y = 0
+        self.current_rad = 0
+        self.odom = Odometry()
+
+        rospy.init_node('localization_node', anonymous=True)
+        laser_sub = rospy.Subscriber(
+            '/noisy_base_scan', LaserScan, self.get_scan)
+        map_sub = rospy.Subscriber('/map', OccupancyGrid, self.get_map)
+        odom_sub = rospy.Subscriber(
+            '/odom', Odometry, self.get_odom)
+        self.rviz_pub = rospy.Publisher(
+            '/laserscanner', MarkerArray, queue_size=10)
+        self.particle_pub = rospy.Publisher(
+            '/particles', MarkerArray, queue_size=1000)
+        self.tf = tf.TransformListener()
+
+    def get_odom(self, data):
+        self.odom = data
 
     def init_particles(self):
         for i in range(1000):
@@ -45,11 +54,10 @@ class Localisation():
                 0, 1000), random.uniform(-math.pi, math.pi)])
 
     def gaussian_p(self, expected, reading):
-        upper_bound = reading + 0.02
-        lower_bound = reading - 0.02
-        norm = scipy.stats.norm(expected, 0.1)
+        upper_bound = reading + 0.01
+        lower_bound = reading - 0.01
 
-        return abs(norm.cdf(upper_bound) - norm.cdf(lower_bound))
+        return abs(self.norm.cdf(upper_bound - expected) - self.norm.cdf(lower_bound - expected))
 
     def draw_particles(self):
         ma = MarkerArray()
@@ -82,17 +90,34 @@ class Localisation():
         self.particle_pub.publish(ma)
 
     def update_particles_positions(self):
-        for i in range(1000):
-            error = random.choice([-0.002, 0, 0.002])
-            x, y = self.grid2frame(self.particles[i][0], self.particles[i][1])
+        old_x = self.current_x
+        old_y = self.current_y
+        self.current_x = self.odom.pose.pose.position.x
+        self.current_y = self.odom.pose.pose.position.y
+        quaternion = (
+            self.odom.pose.pose.orientation.x,
+            self.odom.pose.pose.orientation.y,
+            self.odom.pose.pose.orientation.z,
+            self.odom.pose.pose.orientation.w
+        )
+        self.current_rad = euler_from_quaternion(quaternion)[2]
 
-            updated_y = math.sin(self.particles[i][2]) * (0.05 + error)
-            updated_x = math.cos(self.particles[i][2]) * (0.05 + error)
-            self.particles[i][0], self.particles[i][1] = self.frame2grid(
-                x + updated_x, y + updated_y)
+        diff_x = (self.current_x - old_x) * 1
+        diff_y = (self.current_y - old_y) * 1
 
-    def get_pose(self, pose):
-        self.pose = pose.pose
+        r = math.cos(self.current_rad) * diff_x + \
+            math.sin(self.current_rad) * diff_y
+        print r
+        if r != 0:
+            for i in range(1000):
+                error = random.uniform(-0.005, 0.005)
+                x, y = self.grid2frame(
+                    self.particles[i][0], self.particles[i][1])
+
+                updated_y = math.sin(self.particles[i][2]) * (r + error)
+                updated_x = math.cos(self.particles[i][2]) * (r + error)
+                self.particles[i][0], self.particles[i][1] = self.frame2grid(
+                    x + updated_x, y + updated_y)
 
     def get_map(self, grid):
         self.mapgrid = grid
@@ -124,13 +149,13 @@ class Localisation():
         x_coord = self.start_x + (y * self.resolution)
         return [x_coord, y_coord]
 
-    def get_closest_expected_obstacle(self, x, y, yaw):
+    def get_closest_expected_obstacle(self, x, y, yaww):
         updated_x = 0
         updated_y = 0
         ite = self.resolution
         while ite <= 3.0:
-            updated_y = math.sin(yaw) * ite
-            updated_x = math.cos(yaw) * ite
+            updated_y = math.sin(yaww) * ite
+            updated_x = math.cos(yaww) * ite
             # print math.cos(yaw)
             map_x, map_y = self.frame2grid(x + updated_x, y + updated_y)
             try:
@@ -142,12 +167,10 @@ class Localisation():
                 return ite
                 break
             # print map_x, map_y
-            ite += self.resolution
+            ite += self.resolution * 2
         return ite
 
     def get_position_probability(self, index):
-        import os
-        print os.getpid()
         total_prob = 0
 
         robot_x, robot_y = self.grid2frame(
@@ -168,28 +191,27 @@ class Localisation():
         self.probabilities[index] = total_prob
 
     def update_probabilities(self):
-        from multiprocessing import Process
 
-        # processes = [Process(target=self.get_position_probability, args=(i,))
-        #              for i in range(1000)]
+        def weighted_pick(weights, n_picks):
 
-        # # Start the threads
-        # for x in processes:
-        #     x.start()
-
-        # # Stop the threads
-        # for x in processes:
-        #     x.join()
-        procs = []
+            t = cumsum(weights)
+            s = sum(weights)
+            return searchsorted(t, rand(n_picks) * s)
 
         for i in range(1000):
-            proc = Process(target=self.get_position_probability, args=(i,))
-            procs.append(proc)
-            proc.start()
-        for i in procs:
-            i.join()
+            self.get_position_probability(i)
 
-        print self.probabilities
+        indices = weighted_pick(self.probabilities, 900)
+        updated_prob = []
+
+        for i in indices:
+            updated_prob.append(self.particles[i])
+
+        for i in range(100):
+            updated_prob.append([random.randint(0, 800), random.randint(
+                0, 1000), random.uniform(-math.pi, math.pi)])
+
+        self.particles = list(updated_prob)
 
 
 if __name__ == '__main__':
@@ -208,14 +230,12 @@ if __name__ == '__main__':
                 pose = localisation.tf.lookupTransform(
                     '/map', '/base_footprint', rospy.Time(0))[0]
 
-                # localisation.display_all_lasers(pose[0], pose[1], yaw)
-
                 localisation.draw_particles()
-                # localisation.update_particles_positions()
                 localisation.update_probabilities()
+                localisation.update_particles_positions()
 
-            except Exception as e:
-                print e
+            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+                pass
 
             rate.sleep()
 
