@@ -92,6 +92,7 @@ class Localisation():
     def update_particles_positions(self):
         old_x = self.current_x
         old_y = self.current_y
+        old_t = self.current_rad
         self.current_x = self.odom.pose.pose.position.x
         self.current_y = self.odom.pose.pose.position.y
         quaternion = (
@@ -102,20 +103,27 @@ class Localisation():
         )
         self.current_rad = euler_from_quaternion(quaternion)[2]
 
-        diff_x = (self.current_x - old_x) * 1
-        diff_y = (self.current_y - old_y) * 1
+        delta_t = self.current_rad - old_t
+
+        diff_x = (self.current_x - old_x) * 2
+        diff_y = (self.current_y - old_y) * 2
 
         r = math.cos(self.current_rad) * diff_x + \
             math.sin(self.current_rad) * diff_y
-        print r
-        if r != 0:
+        # print r
+        if r != 0 or delta_t != 0:
             for i in range(1000):
-                error = random.uniform(-0.005, 0.005)
+                error = random.uniform(-0.01, 0.01)
                 x, y = self.grid2frame(
                     self.particles[i][0], self.particles[i][1])
 
-                updated_y = math.sin(self.particles[i][2]) * (r + error)
-                updated_x = math.cos(self.particles[i][2]) * (r + error)
+                self.particles[i][2] += delta_t * \
+                    2 + random.uniform(-0.01, 0.01)
+
+                updated_y = math.sin(
+                    self.particles[i][2]) * (r + random.uniform(-0.01, 0.01))
+                updated_x = math.cos(
+                    self.particles[i][2]) * (r + random.uniform(-0.01, 0.01))
                 self.particles[i][0], self.particles[i][1] = self.frame2grid(
                     x + updated_x, y + updated_y)
 
@@ -204,8 +212,15 @@ class Localisation():
         indices = weighted_pick(self.probabilities, 900)
         updated_prob = []
 
+        total_x = 0
+        total_y = 0
+
         for i in indices:
-            updated_prob.append(self.particles[i])
+            updated_prob.append(self.particles[i][:])
+            total_x += self.particles[i][0]
+            total_y += self.particles[i][1]
+
+        print "I think I am at:", self.grid2frame(total_x / 900.0, total_y / 900.0)
 
         for i in range(100):
             updated_prob.append([random.randint(0, 800), random.randint(

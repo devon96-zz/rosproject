@@ -48,8 +48,8 @@ if __name__ == '__main__':
         while not rospy.is_shutdown():
 
             tw = Twist()
-            tw.linear.x = 0.05
-            #tw.angular.z = 0.005
+            #tw.linear.x = 0.05
+            tw.angular.z = 0.03
             vel_pub.publish(tw)
 
             rate.sleep()
