@@ -89,6 +89,8 @@ class myRobot():
 
         self.init_graph()
 
+        self.odom_pose = [(0, 0, 0), (0, 0, 0, 0)]
+
         self.rviz_pub = rospy.Publisher(
             "/robot_model", MarkerArray, queue_size=10)
 
@@ -327,8 +329,8 @@ class myRobot():
         self.path_pub.publish(ma)
 
     def draw_odom(self):
-
-        odom_pose = self.tf_listener.lookupTransform(
+        old_pose = self.odom_pose[:]
+        self.odom_pose = self.tf_listener.lookupTransform(
             "/map", "/odom", rospy.Time(0))
 
         mr = Marker()
@@ -337,13 +339,19 @@ class myRobot():
         mr.id = 1
         mr.type = mr.CUBE
         mr.action = mr.ADD
-        mr.pose.position.x = odom_pose[0][0] - 0.05
-        mr.pose.position.y = odom_pose[0][1]
+        mr.pose.position.x = old_pose[0][0] + \
+            (old_pose[0][0] + self.odom_pose[0][0]) * 2 - 0.05
+        mr.pose.position.y = old_pose[0][1] + \
+            (old_pose[0][1] + self.odom_pose[0][1]) * 2
         mr.pose.position.z = 0.05
-        mr.pose.orientation.x = odom_pose[1][0]
-        mr.pose.orientation.y = odom_pose[1][1]
-        mr.pose.orientation.z = odom_pose[1][2]
-        mr.pose.orientation.w = odom_pose[1][3]
+        mr.pose.orientation.x = old_pose[1][0] + \
+            (old_pose[1][0] + self.odom_pose[1][0]) * 2
+        mr.pose.orientation.y = old_pose[1][1] + \
+            (old_pose[1][1] + self.odom_pose[1][1]) * 2
+        mr.pose.orientation.z = old_pose[1][2] + \
+            (old_pose[1][2] + self.odom_pose[1][2]) * 2
+        mr.pose.orientation.w = old_pose[1][3] + \
+            (old_pose[1][3] + self.odom_pose[1][3]) * 2
         mr.scale.x = 0.1
         mr.scale.y = 0.1
         mr.scale.z = 0.1
