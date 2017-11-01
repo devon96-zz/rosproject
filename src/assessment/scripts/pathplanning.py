@@ -10,6 +10,7 @@ from itertools import chain, permutations
 from geometry_msgs.msg import Point, Twist
 from visualization_msgs.msg import Marker, MarkerArray
 from nav_msgs.msg import OccupancyGrid, Odometry
+from std_msgs.msg import Float32MultiArray
 
 
 class Node:  # helper classes for both graph and nodes to make the representation easier
@@ -81,6 +82,8 @@ class myRobot():
         self.distance = 0
 
         self.order = []
+
+        self.all_markers = []
 
         self.graph = Graph()
 
@@ -320,6 +323,7 @@ class myRobot():
         ma = MarkerArray()
         ma.markers.append(mr)
 
+        self.all_markers.append(ma)
         self.path_pub.publish(ma)
 
     def draw_odom(self):
@@ -359,6 +363,9 @@ class myRobot():
         ma = MarkerArray()
 
         ite = 0
+
+        self.all_markers = []
+
         for i in self.best_path:
             robot.draw_path(cur_x, cur_y, i[0], i[1], ite)
 
@@ -384,6 +391,24 @@ class myRobot():
             ma.markers.append(mr)
             ite += 1
         self.goals_pub.publish(ma)
+
+    def publish_best_path(self):
+        pub1 = rospy.Publisher(
+            "/best_path_x", Float32MultiArray, queue_size=10)
+        pub2 = rospy.Publisher(
+            "/best_path_y", Float32MultiArray, queue_size=10)
+
+        message_x = Float32MultiArray()
+        message_y = Float32MultiArray()
+
+        for i in self.all_markers:
+            for marker in i.markers:
+                for point in marker.points[::-1]:
+                    message_x.data.append(point.x)
+                    message_y.data.append(point.y)
+
+        pub1.publish(message_x)
+        pub2.publish(message_y)
 
 
 if __name__ == '__main__':
@@ -411,6 +436,7 @@ if __name__ == '__main__':
             robot.draw_self()
             robot.draw_odom()
             robot.draw_goals(-4.8, -3.6)
+            robot.publish_best_path()
 
             rate.sleep()
 

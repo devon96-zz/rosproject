@@ -17,6 +17,7 @@ import scipy.stats
 import random
 from numpy import cumsum, sort, sum, searchsorted
 from numpy.random import rand
+from scipy import ndimage
 
 
 class Localisation():
@@ -43,15 +44,23 @@ class Localisation():
             '/laserscanner', MarkerArray, queue_size=10)
         self.particle_pub = rospy.Publisher(
             '/particles', MarkerArray, queue_size=1000)
+
+        self.base_pose_sub = rospy.Subscriber(
+            '/base_pose_ground_truth', Odometry, self.get_base_pose)
+        self.base_pose = Odometry()
+
         self.tf = tf.TransformListener()
 
     def get_odom(self, data):
         self.odom = data
 
+    def get_base_pose(self, data):
+        self.base_pose = data.pose.pose.position
+
     def init_particles(self):
         for i in range(1000):
-            self.particles.append([random.randint(0, 800), random.randint(
-                0, 1000), random.uniform(-math.pi, math.pi)])
+            self.particles.append([random.randint(0, 799), random.randint(
+                0, 999), random.uniform(-math.pi, math.pi)])
 
     def gaussian_p(self, expected, reading):
         upper_bound = reading + 0.01
@@ -121,9 +130,9 @@ class Localisation():
                     2 + random.uniform(-0.01, 0.01)
 
                 updated_y = math.sin(
-                    self.particles[i][2]) * (r + random.uniform(-0.01, 0.01))
+                    self.particles[i][2]) * r + random.uniform(-0.01, 0.01)
                 updated_x = math.cos(
-                    self.particles[i][2]) * (r + random.uniform(-0.01, 0.01))
+                    self.particles[i][2]) * r + random.uniform(-0.01, 0.01)
                 self.particles[i][0], self.particles[i][1] = self.frame2grid(
                     x + updated_x, y + updated_y)
 
@@ -175,7 +184,7 @@ class Localisation():
                 return ite
                 break
             # print map_x, map_y
-            ite += self.resolution * 2
+            ite += self.resolution * 3
         return ite
 
     def get_position_probability(self, index):
@@ -209,7 +218,7 @@ class Localisation():
         for i in range(1000):
             self.get_position_probability(i)
 
-        indices = weighted_pick(self.probabilities, 900)
+        indices = weighted_pick(self.probabilities, 800)
         updated_prob = []
 
         total_x = 0
@@ -221,12 +230,19 @@ class Localisation():
             total_y += self.particles[i][1]
 
         print "I think I am at:", self.grid2frame(total_x / 900.0, total_y / 900.0)
+        print "Where I actuall am:", self.base_pose.x, self.base_pose.y
 
-        for i in range(100):
-            updated_prob.append([random.randint(0, 800), random.randint(
-                0, 1000), random.uniform(-math.pi, math.pi)])
+        for i in range(200):
+            updated_prob.append([random.randint(0, 799), random.randint(
+                0, 999), random.uniform(-math.pi, math.pi)])
 
         self.particles = list(updated_prob)
+        # tmp = np.zeros((800, 1000), dtype=np.int16)
+        # for i in self.particles:
+        #     tmp[i[0]][i[1]] += 1
+        # print "Center of mass thinks we are at:", self.grid2frame(int(ndimage.measurements.center_of_mass(tmp)[0]), int(ndimage.measurements.center_of_mass(tmp)[1]))
+        # print "Extrama thinks we are at:", self.grid2frame(ndimage.extrema(tmp)[3][0], ndimage.extrema(tmp)[3][1])
+        # print
 
 
 if __name__ == '__main__':
