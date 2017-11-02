@@ -86,6 +86,15 @@ for i in range(0, new_array.shape[0]):
             counter.cells_array.append((i, j, new_array[i][j], int(
                 round((new_array[i][j] * new_array.shape[1]) / new_array.shape[0]))))
 
+tmp = counter.cells_array[225]
+counter.cells_array[225] = (tmp[0] - 5, tmp[1], tmp[2], tmp[3])
+
+tmp = counter.cells_array[224]
+counter.cells_array[224] = (tmp[0] - 3, tmp[1], tmp[2], tmp[3])
+
+tmp = counter.cells_array[201]
+counter.cells_array[201] = (tmp[0] + 5, tmp[1], tmp[2], tmp[3])
+
 for i in counter.cells_array:
     data[i[0]][i[1]] = [255, 0, 0]
 
@@ -151,7 +160,7 @@ for i in counter.cells_array:
     cell_ite += 1
 
 
-counter.cells_array.append((316, 840, 6, 15))
+counter.cells_array.append((313, 840, 6, 15))
 counter.neighbors[len(counter.cells_array) -
                   1] = set([225, len(counter.cells_array)])
 counter.neighbors[225].add(len(counter.cells_array) - 1)
@@ -164,10 +173,16 @@ counter.cells_array.append((313, 880, 6, 15))
 counter.neighbors[len(counter.cells_array) -
                   1] = set([len(counter.cells_array) - 2, len(counter.cells_array)])
 
-counter.cells_array.append((313, 895, 6, 15))
+counter.cells_array.append((312, 895, 6, 15))
 counter.neighbors[len(counter.cells_array) -
                   1] = set([len(counter.cells_array) - 2, 201])
 counter.neighbors[201].add(len(counter.cells_array) - 2)
+
+print counter.cells_array[225]
+print counter.cells_array[201]
+
+print counter.cells_array[225]
+print counter.cells_array[201]
 
 
 import pickle
@@ -207,6 +222,7 @@ with open('cells.pickle', 'wb') as f:
 # cell = find_closest_cell(center_x - width / 2 - 1, center_y)
 # data[counter.cells_array[cell][0]][counter.cells_array[cell][1]] = [0, 255, 0]
 
+
 for i in range(1, new_array.shape[0]):
     for j in range(1, new_array.shape[1]):
         if new_array[i][j] == 1:
@@ -238,8 +254,8 @@ for i in range(1, new_array.shape[0]):
 # data[680][140] = [0, 255, 0]
 # print find_closest_cell(680, 140)
 
-data[305][910] = [0, 255, 0]
-print find_closest_cell(305, 910)
+# data[305][910] = [0, 255, 0]
+# print find_closest_cell(305, 910)
 
 data[315][830] = [0, 255, 0]
 print find_closest_cell(315, 830)

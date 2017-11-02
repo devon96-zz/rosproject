@@ -31,13 +31,20 @@ class Drive():
         self.y_points_sub = rospy.Subscriber(
             "/best_path_y", Float32MultiArray, self.get_y_points)
 
+        self.pose_sub = rospy.Subscriber(
+            "/base_pose_ground_truth", Odometry, self.get_pose)
+
         self.odom = Odometry()
+        self.pose = Odometry()
         self.scan = LaserScan()
         self.get_odom(self.odom)
         self.theta = 0
 
         self.x_points = []
         self.y_points = []
+
+    def get_pose(self, data):
+        self.pose = data.pose.pose
 
     def get_x_points(self, data):
         self.x_points = list(data.data)[3:]
@@ -75,9 +82,9 @@ class Drive():
         t1 = rospy.Time.now().to_sec()
 
         if cw:
-            tw.angular.z = -0.30
+            tw.angular.z = -0.20
         else:
-            tw.angular.z = 0.30
+            tw.angular.z = 0.20
         self.vel_pub.publish(tw)
 
         while (abs(tw.angular.z) * (t1 - t0) / 2) < rad / 2:
@@ -86,12 +93,15 @@ class Drive():
             self.vel_pub.publish(tw)
 
         tw.angular.z = 0
+        tw.linear.x = 0
         self.vel_pub.publish(tw)
 
     def wander(self):
 
         tw = Twist()
+        rate = rospy.Rate(5)
         while True:
+
             try:
                 if min(self.scan.ranges[10:18]) < 0.15:
                     tw.linear.x = 0
@@ -104,6 +114,7 @@ class Drive():
 
             tw.linear.x = 0.3
             self.vel_pub.publish(tw)
+            rate.sleep()
 
         tw.linear.x = 0
         self.vel_pub.publish(tw)
@@ -123,7 +134,7 @@ class Drive():
         if (dist > 180):
             dist = 360 - dist
         direction = False
-        print x1, x2
+
         if isclose(x1 + dist, x2) or isclose(x1 + dist - 360, x2):
             direction = True
 
@@ -132,6 +143,14 @@ class Drive():
     def drive_to_goal(self, sx, sy, fx, fy):
         distance = math.sqrt((sx - fx)**2 + (sy - fy)**2)
         angle = math.atan2(fy - sy, fx - sx)
+
+        quaternion = (
+            self.pose.orientation.x,
+            self.pose.orientation.y,
+            self.pose.orientation.z,
+            self.pose.orientation.w
+        )
+        self.theta = euler_from_quaternion(quaternion)[2]
 
         angle, direction = self.turn_direction(angle, self.theta)
         print math.degrees(angle), direction
@@ -163,15 +182,16 @@ class Drive():
 
         for i in range(0, len(self.x_points) - 1):
             self.drive_to_goal(x, y, self.x_points[i], self.y_points[i])
-            x = self.x_points[i]
-            y = self.y_points[i]
+            x = self.pose.position.x
+            y = self.pose.position.y
 
 
 if __name__ == '__main__':
     try:
         drive = Drive()
-        # drive.drive_to_all_goals()
-        drive.wander()
+        drive.drive_to_all_goals()
+        # drive.wander()
+
         rospy.spin()
 
     except rospy.ROSInterruptException:
