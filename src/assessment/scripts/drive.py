@@ -153,7 +153,6 @@ class Drive():
         self.theta = euler_from_quaternion(quaternion)[2]
 
         angle, direction = self.turn_direction(angle, self.theta)
-        print math.degrees(angle), direction
 
         self.theta = math.atan2(fy - sy, fx - sx)
         self.turn(abs(angle), direction)

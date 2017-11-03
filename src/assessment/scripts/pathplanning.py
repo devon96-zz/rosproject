@@ -89,25 +89,11 @@ class myRobot():
 
         self.init_graph()
 
-        self.odom_pose = [(0, 0, 0), (0, 0, 0, 0)]
-
-        self.rviz_pub = rospy.Publisher(
-            "/robot_model", MarkerArray, queue_size=10)
-
-        self.rviz_map_pub = rospy.Publisher(
-            "/real_robot_pose", OccupancyGrid, queue_size=10)
-
-        self.cells_pub = rospy.Publisher(
-            "/cells_boxes", MarkerArray, queue_size=10)
-
         self.path_pub = rospy.Publisher(
             "/calculated_path", MarkerArray, queue_size=10)
 
         self.goals_pub = rospy.Publisher(
             "/goals_models", MarkerArray, queue_size=10)
-
-        self.ground_pose_sub = rospy.Subscriber(
-            "/base_pose_ground_truth", Odometry, self.get_pose)
 
         self.map_sub = rospy.Subscriber("/map", OccupancyGrid, self.get_map)
 
@@ -208,9 +194,6 @@ class myRobot():
         self.start_y = data.info.origin.position.y
         self.resolution = data.info.resolution
 
-    def get_pose(self, robot_pose):
-        self.robot_pose = robot_pose
-
     def get_path_permutation(self, start_x, start_y):
         goal_list = []
         goal_list_permutations = []
@@ -234,30 +217,6 @@ class myRobot():
 
         self.best_path = goal_list_permutations[distances.index(
             min(distances))]
-
-       # print rospy.get_param("/robot_start")
-
-    def draw_self(self):
-        mr = Marker()
-        mr.header.frame_id = "/map"
-        mr.ns = "basic"
-        mr.id = 2
-        mr.type = mr.CUBE
-        mr.action = mr.ADD
-        mr.pose.position.x = self.robot_pose.pose.pose.position.x - 0.05
-        mr.pose.position.y = self.robot_pose.pose.pose.position.y
-        mr.pose.position.z = 0.05
-        mr.pose.orientation = self.robot_pose.pose.pose.orientation
-        mr.scale.x = 0.1
-        mr.scale.y = 0.1
-        mr.scale.z = 0.1
-        mr.color.r = 0
-        mr.color.g = 0
-        mr.color.b = 1
-        mr.color.a = 1.0
-        ma = MarkerArray()
-        ma.markers.append(mr)
-        self.rviz_pub.publish(ma)
 
     def find_closest_cell(self, x, y):
         min_dist = 9999
@@ -328,41 +287,6 @@ class myRobot():
         self.all_markers.append(ma)
         self.path_pub.publish(ma)
 
-    def draw_odom(self):
-        old_pose = self.odom_pose[:]
-        self.odom_pose = self.tf_listener.lookupTransform(
-            "/map", "/odom", rospy.Time(0))
-
-        mr = Marker()
-        mr.header.frame_id = "/map"
-        mr.ns = "odom_pose"
-        mr.id = 1
-        mr.type = mr.CUBE
-        mr.action = mr.ADD
-        mr.pose.position.x = old_pose[0][0] + \
-            (old_pose[0][0] + self.odom_pose[0][0]) * 2 - 0.05
-        mr.pose.position.y = old_pose[0][1] + \
-            (old_pose[0][1] + self.odom_pose[0][1]) * 2
-        mr.pose.position.z = 0.05
-        mr.pose.orientation.x = old_pose[1][0] + \
-            (old_pose[1][0] + self.odom_pose[1][0]) * 2
-        mr.pose.orientation.y = old_pose[1][1] + \
-            (old_pose[1][1] + self.odom_pose[1][1]) * 2
-        mr.pose.orientation.z = old_pose[1][2] + \
-            (old_pose[1][2] + self.odom_pose[1][2]) * 2
-        mr.pose.orientation.w = old_pose[1][3] + \
-            (old_pose[1][3] + self.odom_pose[1][3]) * 2
-        mr.scale.x = 0.1
-        mr.scale.y = 0.1
-        mr.scale.z = 0.1
-        mr.color.r = 1
-        mr.color.g = 0
-        mr.color.b = 0
-        mr.color.a = 1.0
-        ma = MarkerArray()
-        ma.markers.append(mr)
-        self.rviz_pub.publish(ma)
-
     def draw_goals(self, sx, sy):
 
         cur_x = sx
@@ -402,9 +326,9 @@ class myRobot():
 
     def publish_best_path(self):
         pub1 = rospy.Publisher(
-            "/best_path_x", Float32MultiArray, queue_size=10)
+            "/best_path_x", Float32MultiArray, queue_size=10, latch=True)
         pub2 = rospy.Publisher(
-            "/best_path_y", Float32MultiArray, queue_size=10)
+            "/best_path_y", Float32MultiArray, queue_size=10, latch=True)
 
         message_x = Float32MultiArray()
         message_y = Float32MultiArray()
@@ -422,7 +346,6 @@ class myRobot():
 if __name__ == '__main__':
     try:
         rospy.init_node('pathplannig_node', anonymous=True)
-        vel_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
         robot = myRobot()
 
         rate = rospy.Rate(5)
@@ -437,12 +360,6 @@ if __name__ == '__main__':
 
         while not rospy.is_shutdown():
 
-            tw = Twist()
-            # tw.linear.x = 0.1
-            vel_pub.publish(tw)
-
-            robot.draw_self()
-            robot.draw_odom()
             robot.draw_goals(-4.8, -3.6)
             robot.publish_best_path()
 

@@ -18,6 +18,8 @@ import random
 from numpy import cumsum, sort, sum, searchsorted
 from numpy.random import rand
 from scipy import ndimage
+import threading
+from collections import Counter
 
 
 class Localisation():
@@ -26,7 +28,7 @@ class Localisation():
         self.laser_readings = LaserScan()
 
         self.particles = []
-        self.probabilities = [0] * 1000
+        self.probabilities = [0] * 600
         self.init_particles()
         self.norm = scipy.stats.norm(0, 0.1)
         self.current_x = 0
@@ -47,30 +49,39 @@ class Localisation():
 
         self.base_pose_sub = rospy.Subscriber(
             '/base_pose_ground_truth', Odometry, self.get_base_pose)
+
+        self.vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=100)
         self.base_pose = Odometry()
 
         self.tf = tf.TransformListener()
 
     def get_odom(self, data):
         self.odom = data
+        self.quaternion = (
+            self.odom.pose.pose.orientation.x,
+            self.odom.pose.pose.orientation.y,
+            self.odom.pose.pose.orientation.z,
+            self.odom.pose.pose.orientation.w
+        )
 
     def get_base_pose(self, data):
         self.base_pose = data.pose.pose.position
 
     def init_particles(self):
-        for i in range(1000):
+        for i in range(600):
             self.particles.append([random.randint(0, 799), random.randint(
                 0, 999), random.uniform(-math.pi, math.pi)])
 
     def gaussian_p(self, expected, reading):
-        upper_bound = reading + 0.01
-        lower_bound = reading - 0.01
+        # upper_bound = reading + 0.01
+        # lower_bound = reading - 0.01
 
-        return abs(self.norm.cdf(upper_bound - expected) - self.norm.cdf(lower_bound - expected))
+        return self.norm.pdf(expected - reading)
+        # return math.expm1(-0.5 * ((reading - expected) / 0.1))
 
     def draw_particles(self):
         ma = MarkerArray()
-        for i in range(1000):
+        for i in range(600):
             mr = Marker()
             mr.header.frame_id = "/map"
             mr.ns = "particle"
@@ -114,25 +125,24 @@ class Localisation():
 
         delta_t = self.current_rad - old_t
 
-        diff_x = (self.current_x - old_x) * 2
-        diff_y = (self.current_y - old_y) * 2
+        diff_x = (self.current_x - old_x)
+        diff_y = (self.current_y - old_y)
 
         r = math.cos(self.current_rad) * diff_x + \
             math.sin(self.current_rad) * diff_y
         # print r
         if r != 0 or delta_t != 0:
-            for i in range(1000):
-                error = random.uniform(-0.01, 0.01)
+            for i in range(600):
                 x, y = self.grid2frame(
                     self.particles[i][0], self.particles[i][1])
 
-                self.particles[i][2] += delta_t * \
-                    2 + random.uniform(-0.01, 0.01)
+                self.particles[i][2] += delta_t + random.uniform(-0.003, 0.003)
+
 
                 updated_y = math.sin(
-                    self.particles[i][2]) * r + random.uniform(-0.01, 0.01)
+                    self.particles[i][2]) * (r + random.uniform(-0.003, 0.003))
                 updated_x = math.cos(
-                    self.particles[i][2]) * r + random.uniform(-0.01, 0.01)
+                    self.particles[i][2]) * (r + random.uniform(-0.003, 0.003))
                 self.particles[i][0], self.particles[i][1] = self.frame2grid(
                     x + updated_x, y + updated_y)
 
@@ -175,12 +185,15 @@ class Localisation():
             updated_x = math.cos(yaww) * ite
             # print math.cos(yaw)
             map_x, map_y = self.frame2grid(x + updated_x, y + updated_y)
+            if (not (0 < map_x < 800)) or (not (0 < map_y < 1000)):
+                break
             try:
                 if(self.grid_array[map_x][map_y] == 100):
                     # print "OBSTACLE FOUND at", self.grid2frame(map_x, map_y)
                     return ite
                     break
-            except IndexError:
+            except Exception as e:
+                print e
                 return ite
                 break
             # print map_x, map_y
@@ -198,12 +211,12 @@ class Localisation():
         ite = 1
         laser_angle = self.laser_readings.angle_min
         angle_inc = self.laser_readings.angle_increment
-        for reading in self.laser_readings.ranges[::5]:
+        for reading in self.laser_readings.ranges[::6]:
             obst_dist = self.get_closest_expected_obstacle(
                 robot_x, robot_y, radians + laser_angle)
             total_prob += self.gaussian_p(obst_dist, reading)
 
-            laser_angle += angle_inc * 5
+            laser_angle += angle_inc * 6
             ite += 1
         self.probabilities[index] = total_prob
 
@@ -214,55 +227,100 @@ class Localisation():
             t = cumsum(weights)
             s = sum(weights)
             return searchsorted(t, rand(n_picks) * s)
+        while True:
+            from datetime import datetime
+            start = datetime.now()
+            for i in range(600):
+                self.get_position_probability(i)
+            print datetime.now() - start
+            indices = weighted_pick(self.probabilities, 400)
+            updated_prob = []
 
-        for i in range(1000):
-            self.get_position_probability(i)
+            total_x = 0
+            total_y = 0
 
-        indices = weighted_pick(self.probabilities, 800)
-        updated_prob = []
+            for i in indices:
+                updated_prob.append(self.particles[i][:])
+                total_x += self.particles[i][0]
+                total_y += self.particles[i][1]
+            common_indx = max(set(indices), key=list(indices).count)
 
-        total_x = 0
-        total_y = 0
+            print "I think I am at:", self.grid2frame(self.particles[common_indx][0], self.particles[common_indx][1])
+            print "Where I actuall am:", self.base_pose.x, self.base_pose.y
 
-        for i in indices:
-            updated_prob.append(self.particles[i][:])
-            total_x += self.particles[i][0]
-            total_y += self.particles[i][1]
+            for i in range(200):
+                updated_prob.append([random.randint(0, 799), random.randint(
+                    0, 999), random.uniform(-math.pi, math.pi)])
 
-        print "I think I am at:", self.grid2frame(total_x / 900.0, total_y / 900.0)
-        print "Where I actuall am:", self.base_pose.x, self.base_pose.y
+            self.particles = list(updated_prob)
 
-        for i in range(200):
-            updated_prob.append([random.randint(0, 799), random.randint(
-                0, 999), random.uniform(-math.pi, math.pi)])
 
-        self.particles = list(updated_prob)
-        # tmp = np.zeros((800, 1000), dtype=np.int16)
-        # for i in self.particles:
-        #     tmp[i[0]][i[1]] += 1
-        # print "Center of mass thinks we are at:", self.grid2frame(int(ndimage.measurements.center_of_mass(tmp)[0]), int(ndimage.measurements.center_of_mass(tmp)[1]))
-        # print "Extrama thinks we are at:", self.grid2frame(ndimage.extrema(tmp)[3][0], ndimage.extrema(tmp)[3][1])
-        # print
+    def turn(self, rad, cw):
+
+        tw = Twist()
+
+        t0 = rospy.Time.now().to_sec()
+        t1 = rospy.Time.now().to_sec()
+
+        if cw:
+            tw.angular.z = -0.20
+        else:
+            tw.angular.z = 0.20
+        self.vel_pub.publish(tw)
+
+        rate = rospy.Rate(5)
+        while (abs(tw.angular.z) * (t1 - t0) / 2) < rad / 2:
+
+            t1 = rospy.Time.now().to_sec()
+            self.vel_pub.publish(tw)
+            rate.sleep()
+
+        tw.angular.z = 0
+        tw.linear.x = 0
+        self.vel_pub.publish(tw)
+
+    def wander(self):
+
+        tw = Twist()
+        rate = rospy.Rate(5)
+        while True:
+
+            try:
+                if min(self.laser_readings.ranges[8:20]) < 0.2:
+                    tw.linear.x = 0
+                    self.vel_pub.publish(tw)
+                    self.turn(math.pi / 2, False)
+            except Exception as e:
+                print e
+
+            tw.linear.x = 0.2
+            self.vel_pub.publish(tw)
+            rate.sleep()
+
+        tw.linear.x = 0
+        self.vel_pub.publish(tw)
 
 
 if __name__ == '__main__':
     try:
         localisation = Localisation()
-        rate = rospy.Rate(3)
-        twist_sub = rospy.Publisher('/cmd_vel', Twist, queue_size=100)
 
-        tw = Twist()
+        wander_thread = threading.Thread(target=localisation.wander)
+        particles_thread = threading.Thread(
+            target=localisation.update_probabilities)
+        wander_thread.daemon = True
+        particles_thread.daemon = True
+    
+        wander_thread.start()
+        particles_thread.start()
 
+        rate = rospy.Rate(4)
         while not rospy.is_shutdown():
 
             try:
-                yaw = euler_from_quaternion(localisation.tf.lookupTransform(
-                    '/map', '/base_footprint', rospy.Time(0))[1])[2]
-                pose = localisation.tf.lookupTransform(
-                    '/map', '/base_footprint', rospy.Time(0))[0]
 
                 localisation.draw_particles()
-                localisation.update_probabilities()
+                # localisation.update_probabilities()
                 localisation.update_particles_positions()
 
             except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
@@ -271,4 +329,4 @@ if __name__ == '__main__':
             rate.sleep()
 
     except rospy.ROSInterruptException:
-        pass
+        wander_thread.exit()
