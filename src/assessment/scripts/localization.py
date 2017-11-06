@@ -28,7 +28,7 @@ class Localisation():
         self.laser_readings = LaserScan()
 
         self.particles = []
-        self.probabilities = [0] * 600
+        self.probabilities = [0] * 800
         self.init_particles()
         self.norm = scipy.stats.norm(0, 0.1)
         self.current_x = 0
@@ -68,7 +68,7 @@ class Localisation():
         self.base_pose = data.pose.pose.position
 
     def init_particles(self):
-        for i in range(600):
+        for i in range(800):
             self.particles.append([random.randint(0, 799), random.randint(
                 0, 999), random.uniform(-math.pi, math.pi)])
 
@@ -81,7 +81,7 @@ class Localisation():
 
     def draw_particles(self):
         ma = MarkerArray()
-        for i in range(600):
+        for i in range(800):
             mr = Marker()
             mr.header.frame_id = "/map"
             mr.ns = "particle"
@@ -132,12 +132,11 @@ class Localisation():
             math.sin(self.current_rad) * diff_y
         # print r
         if r != 0 or delta_t != 0:
-            for i in range(600):
+            for i in range(800):
                 x, y = self.grid2frame(
                     self.particles[i][0], self.particles[i][1])
 
-                self.particles[i][2] += delta_t + random.uniform(-0.003, 0.003)
-
+                self.particles[i][2] += delta_t + random.uniform(-0.001, 0.001)
 
                 updated_y = math.sin(
                     self.particles[i][2]) * (r + random.uniform(-0.003, 0.003))
@@ -228,12 +227,10 @@ class Localisation():
             s = sum(weights)
             return searchsorted(t, rand(n_picks) * s)
         while True:
-            from datetime import datetime
-            start = datetime.now()
-            for i in range(600):
+            for i in range(800):
                 self.get_position_probability(i)
-            print datetime.now() - start
-            indices = weighted_pick(self.probabilities, 400)
+
+            indices = weighted_pick(self.probabilities, 500)
             updated_prob = []
 
             total_x = 0
@@ -248,12 +245,11 @@ class Localisation():
             print "I think I am at:", self.grid2frame(self.particles[common_indx][0], self.particles[common_indx][1])
             print "Where I actuall am:", self.base_pose.x, self.base_pose.y
 
-            for i in range(200):
+            for i in range(300):
                 updated_prob.append([random.randint(0, 799), random.randint(
                     0, 999), random.uniform(-math.pi, math.pi)])
 
             self.particles = list(updated_prob)
-
 
     def turn(self, rad, cw):
 
@@ -304,17 +300,19 @@ class Localisation():
 if __name__ == '__main__':
     try:
         localisation = Localisation()
+        rate = rospy.Rate(4)
+        while not hasattr(localisation, "mapgrid"):
+            rate.sleep()
 
         wander_thread = threading.Thread(target=localisation.wander)
         particles_thread = threading.Thread(
             target=localisation.update_probabilities)
         wander_thread.daemon = True
         particles_thread.daemon = True
-    
+
         wander_thread.start()
         particles_thread.start()
 
-        rate = rospy.Rate(4)
         while not rospy.is_shutdown():
 
             try:
