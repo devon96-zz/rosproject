@@ -136,12 +136,12 @@ class Localisation():
                 x, y = self.grid2frame(
                     self.particles[i][0], self.particles[i][1])
 
-                self.particles[i][2] += delta_t + random.uniform(-0.001, 0.001)
+                self.particles[i][2] += delta_t + random.uniform(-0.005, 0.005)
 
                 updated_y = math.sin(
-                    self.particles[i][2]) * (r + random.uniform(-0.003, 0.003))
+                    self.particles[i][2]) * (r + random.uniform(-0.005, 0.005))
                 updated_x = math.cos(
-                    self.particles[i][2]) * (r + random.uniform(-0.003, 0.003))
+                    self.particles[i][2]) * (r + random.uniform(-0.005, 0.005))
                 self.particles[i][0], self.particles[i][1] = self.frame2grid(
                     x + updated_x, y + updated_y)
 
@@ -190,12 +190,8 @@ class Localisation():
                 if(self.grid_array[map_x][map_y] == 100):
                     # print "OBSTACLE FOUND at", self.grid2frame(map_x, map_y)
                     return ite
-                    break
             except Exception as e:
-                print e
                 return ite
-                break
-            # print map_x, map_y
             ite += self.resolution * 3
         return ite
 
