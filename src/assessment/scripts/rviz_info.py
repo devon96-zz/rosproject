@@ -76,7 +76,7 @@ class RvizMarkers():
             mr.color.b = 0
             mr.color.a = 1.0
             ma.markers.append(mr)
-        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+        except:
             pass
 
         self.rviz_pub.publish(ma)
