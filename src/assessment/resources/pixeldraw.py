@@ -7,6 +7,7 @@ from hashlib import sha1
 from time import sleep
 import time
 import heapq
+import pickle
 
 # Create a 1024x1024x3 array of 8 bit unsigned integers
 f = open("map.txt", "r")
@@ -28,9 +29,6 @@ x_size = new_array.shape[0]
 y_size = new_array.shape[1]
 
 
-# print new_array.shape[0]
-
-
 class myCounter():
     def __init__(self):
         self.counter = 0
@@ -39,7 +37,6 @@ class myCounter():
 
 
 counter = myCounter()
-# print new_array[new_array.shape[0] - 1, new_array.shape[1] - 1]
 
 for i in range(6, new_array.shape[0] - 6):
     for j in range(6, new_array.shape[1] - 6):
@@ -114,10 +111,6 @@ def find_closest_cell(x, y):
     return cell_index
 
 
-# print find_closest_cell(500, 250)
-# print counter.cells_array[find_closest_cell(320, 835)]
-# data[520][220] = [0, 220, 222]
-
 for i in range(0, len(counter.cells_array)):
     counter.neighbors[i] = set()
 
@@ -128,19 +121,12 @@ for i in counter.cells_array:
     width = i[2]
     height = i[3]
 
-    # center_x = 318
-    # center_y = 835
-    # width = 13
-    # height = 16
-
     ite = center_x - width / 2 + 1
     while ite <= (center_x + width / 2):  # Check neighbours to the right.
         cell = find_closest_cell(ite, center_y + height / 2 + 2)
         if cell == -1:
             ite += 10
         else:
-            # data[counter.cells_array[cell][0]
-            #      ][counter.cells_array[cell][1]] = [0, 255, 0]
             counter.neighbors[cell_ite].add(cell)
             counter.neighbors[cell].add(cell_ite)
             ite += counter.cells_array[cell][3]
@@ -151,15 +137,13 @@ for i in counter.cells_array:
         if cell == -1:
             ite += 10
         else:
-            # data[counter.cells_array[cell][0]
-            #      ][counter.cells_array[cell][1]] = [0, 255, 0]
             counter.neighbors[cell_ite].add(cell)
             counter.neighbors[cell].add(cell_ite)
             ite += counter.cells_array[cell][2]
 
     cell_ite += 1
 
-
+# Hard-coding this pesky, narrow passage since it's too annoying ._.
 counter.cells_array.append((313, 840, 6, 15))
 counter.neighbors[len(counter.cells_array) -
                   1] = set([225, len(counter.cells_array)])
@@ -178,96 +162,9 @@ counter.neighbors[len(counter.cells_array) -
                   1] = set([len(counter.cells_array) - 2, 201])
 counter.neighbors[201].add(len(counter.cells_array) - 2)
 
-print counter.cells_array[225]
-print counter.cells_array[201]
-
-print counter.cells_array[225]
-print counter.cells_array[201]
-
-
-import pickle
 
 with open('neighbours.pickle', 'wb') as f:
     pickle.dump(counter.neighbors, f)
 
 with open('cells.pickle', 'wb') as f:
     pickle.dump(counter.cells_array, f)
-
-# np.save('neighbours.npy',  counter.neighbors)
-# np.save('cells.npy',  counter.cells_array)
-
-
-# print counter.neighbors[672]
-
-
-# print graph.get_nodes()
-
-
-# center_x = counter.cells_array[cell][0]
-# center_y = counter.cells_array[cell][1]
-# width = counter.cells_array[cell][2]
-# height = counter.cells_array[cell][3]
-
-# data[center_x][center_y] = [0, 255, 0]
-
-# cell = find_closest_cell(center_x, center_y + height / 2 + 1)
-# data[counter.cells_array[cell][0]][counter.cells_array[cell][1]] = [0, 255, 0]
-
-# cell = find_closest_cell(center_x, center_y - height / 2 - 2)
-# data[counter.cells_array[cell][0]][counter.cells_array[cell][1]] = [0, 255, 0]
-
-# cell = find_closest_cell(center_x + width / 2 + 1, center_y)
-# data[counter.cells_array[cell][0]][counter.cells_array[cell][1]] = [0, 255, 0]
-
-# cell = find_closest_cell(center_x - width / 2 - 1, center_y)
-# data[counter.cells_array[cell][0]][counter.cells_array[cell][1]] = [0, 255, 0]
-
-
-for i in range(1, new_array.shape[0]):
-    for j in range(1, new_array.shape[1]):
-        if new_array[i][j] == 1:
-            data[i][j] = [0, 0, 255]
-
-# # Hard-coding this pesky, narrow passage since it's too annoying ._.
-
-
-# print counter.cells_array[len(counter.cells_array) - 1]
-
-# data[310][850] = [255, 0, 0]
-# data[313][850] = [0, 255, 0]
-# data[316][850] = [255, 0, 0]
-
-# data[310][865] = [255, 0, 0]
-# data[313][865] = [0, 255, 0]
-# data[316][865] = [255, 0, 0]
-
-# data[310][880] = [255, 0, 0]
-# data[313][880] = [0, 255, 0]
-# data[316][880] = [255, 0, 0]
-
-# data[310][895] = [255, 0, 0]
-# data[313][895] = [0, 255, 0]
-# data[316][895] = [255, 0, 0]
-
-# data[counter.cells_array[227][0]][counter.cells_array[227][1]] = [0, 255, 0]
-
-# data[680][140] = [0, 255, 0]
-# print find_closest_cell(680, 140)
-
-# data[305][910] = [0, 255, 0]
-# print find_closest_cell(305, 910)
-
-data[315][830] = [0, 255, 0]
-print find_closest_cell(315, 830)
-
-# print counter.neighbors[461]
-# print counter.neighbors[462]
-
-# data[316][830] = [0, 255, 0]
-# print find_closest_cell(316, 830)
-# print counter.cells_array[218]
-
-# print find_closest_cell(305, 910)
-
-img = smp.toimage(data)       # Create a PIL image
-img.show()  # View in default viewer
