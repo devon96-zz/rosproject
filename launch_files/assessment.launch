@@ -6,10 +6,13 @@
   <rosparam param="goal2">[-2.55,3.13]</rosparam> <!-- same as above -->
   <rosparam param="goal3">[4.5,-3.5]</rosparam>  <!-- much harder -->
   <rosparam param="goal4">[5.15,2]</rosparam> <!-- very hard -->
-  <node name="map_server" pkg="map_server" type="map_server" args="/home/konrad/assessment/map.yaml" />
-  <node name="stage" pkg="stage_ros" type="stageros" args="/home/konrad/assessment/map.world" />
+
+  <node name="map_server" pkg="map_server" type="map_server" args="/home/konrad/University/CS3027/rosproject/launch_files/map.yaml" />
+  <node name="stage" pkg="stage_ros" type="stageros" args="/home/konrad/University/CS3027/rosproject/launch_files/map.world" />
   <node name="add_gaussian_noise" pkg="add_gaussian_noise" type="addGaussianNoise.py"/>
+  <node name="dummy_localization" pkg="dummy_localization" type="dummy_localization.py"/>
 
   <node name="real_robot_pose" pkg="assessment" type="real_robot_pose.py"/>
   <node name="rviz_info" pkg="assessment" type="rviz_info.py"/>  
+
 </launch>

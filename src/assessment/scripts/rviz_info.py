@@ -26,6 +26,8 @@ class RvizMarkers():
             "/base_pose_ground_truth", Odometry, self.draw_self)
         self.rviz_pub = rospy.Publisher(
             "/robot_pose", MarkerArray, queue_size=10)
+        self.odom_pub = rospy.Publisher(
+            "/odom_pose", Odometry, queue_size=10)
         self.listener = tf.TransformListener()
 
     def draw_self(self, odom):
@@ -76,6 +78,15 @@ class RvizMarkers():
             mr.color.b = 0
             mr.color.a = 1.0
             ma.markers.append(mr)
+
+            odom = Odometry()
+            odom.pose.pose.position.x = tf[0][0]
+            odom.pose.pose.position.y = tf[0][1]
+            odom.pose.pose.orientation.x = tf[1][0]
+            odom.pose.pose.orientation.y = tf[1][1]
+            odom.pose.pose.orientation.z = tf[1][2]
+            odom.pose.pose.orientation.w = tf[1][3]
+            self.odom_pub.publish(odom)
         except:
             pass
 

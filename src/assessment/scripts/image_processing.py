@@ -8,7 +8,6 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
 import numpy as np
 from matplotlib import pyplot as plt
-import depth_image_proc
 
 
 class image_converter:
@@ -17,63 +16,43 @@ class image_converter:
         rospy.init_node('image_converter', anonymous=True)
         self.bridge = CvBridge()
         self.time = rospy.Time.now()
-        self.image_sub = rospy.Subscriber("image", Image, self.callback)
-        self.cv_image = Image()
+        self.image_sub1 = rospy.Subscriber("image_0", Image, self.callback1)
+        self.image_sub2 = rospy.Subscriber("image_1", Image, self.callback2)
 
-    def callback(self, data):
-        if (rospy.Time.now() - self.time).to_sec() < 1:
-            return
-        self.time = rospy.Time.now()
+    def callback1(self, data):
         try:
-            old_image = self.cv_image
-            self.cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
+            self.image1 = self.bridge.imgmsg_to_cv2(data, "bgr8")
         except CvBridgeError as e:
             print(e)
+    def callback2(self, data):
+        try:
+            self.image2 = self.bridge.imgmsg_to_cv2(data, "bgr8")
+        except CvBridgeError as e:
+            print(e)
+    
+    def disparity(self):
+        try:
 
-        # self.cv_image = cv2.inRange(self.cv_image, (0, 0, 0), (0, 0, 0))
+            frame1 = cv2.cvtColor(self.image1, cv2.COLOR_BGR2GRAY)
+            frame2 = cv2.cvtColor(self.image2, cv2.COLOR_BGR2GRAY)
 
-        sift = cv2.xfeatures2d.SIFT_create()
+            stereo = cv2.StereoBM_create(numDisparities=32, blockSize=15)
+            disparity = stereo.compute(frame1, frame2)
+            cv2.imshow("Image window1", disparity,)
+            cv2.waitKey(3)
+        except Exception as e:
+            print e
+       
+        
 
-        kp1, des1 = sift.detectAndCompute(old_image, None)
-        kp2, des2 = sift.detectAndCompute(self.cv_image, None)
-
-        FLANN_INDEX_KDTREE = 0
-        index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)
-        search_params = dict(checks=50)   # or pass empty dictionary
-
-        flann = cv2.FlannBasedMatcher(index_params, search_params)
-
-        matches = flann.knnMatch(des1, des2, k=2)
-
-        # Need to draw only good matches, so create a mask
-        matchesMask = [[0, 0] for i in xrange(len(matches))]
-
-        # ratio test as per Lowe's paper
-        for i, (m, n) in enumerate(matches):
-            if m.distance < 0.7 * n.distance:
-                matchesMask[i] = [1, 0]
-
-        draw_params = dict(matchColor=(0, 255, 0),
-                           singlePointColor=(255, 0, 0),
-                           matchesMask=matchesMask,
-                           flags=0)
-
-        img3 = cv2.drawMatchesKnn(
-            old_image, kp1, self.cv_image, kp2, matches, None, **draw_params)
-
-        cv2.imshow("Image window", img3)
-        cv2.waitKey(3)
-
-
-def main(args):
+if __name__ == '__main__':
     ic = image_converter()
 
     try:
-        rospy.spin()
+        rate = rospy.Rate(5)
+        while not rospy.is_shutdown():
+            ic.disparity()
+            rate.sleep()
     except KeyboardInterrupt:
         pass
     cv2.destroyAllWindows()
-
-
-if __name__ == '__main__':
-    main(sys.argv)
