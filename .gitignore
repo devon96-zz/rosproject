@@ -48,3 +48,13 @@ qtcreator-*
 CATKIN_IGNORE
 
 .vscode
+
+## Core latex/pdflatex auxiliary files:
+.*ffs
+report/*.log
+report/*.auxiliary
+report/*.fdb*
+report/*.aux
+report/*.fls
+report/*.
+*.synctex.gz

@@ -1,0 +1,431 @@
+\documentclass[a4paper]{article}
+    
+\usepackage[english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{blindtext}
+\usepackage[skins]{tcolorbox}
+\usepackage[margin=1in]{geometry}
+\lstset{
+basicstyle=\small\ttfamily,
+language=Java,
+numbers=left,
+stepnumber=1,
+showstringspaces=false,
+tabsize=1,
+breaklines=true,
+breakatwhitespace=false
+}
+\lstdefinestyle{nonumbers}
+{numbers=none}
+
+\graphicspath{ {images/} }
+\title{CS3027 Continuous Assessment}
+
+\author{Konrad Dryja}
+
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Results of my work throughout CS3027 Robotics during first semester 2017-2018 academic year.
+\end{abstract}
+
+\section{Preface}
+\label{sec:Preliminaries}
+\subsection{Preliminaries}
+
+To be able to run all of nodes and packages, several adjustments to paths needs to be made, mainly path wise, so the exact components are visible to each other.
+Let's start with the launch file located in launch\_files/assessment.launch \textendash{} it's going to be our starting point when running all the nodes written by me. Make sure to modify paths of map\_server, stage and add\_gaussian\_noise so they actually point to the actual location of the packages within your ROS environment. We will also have to modify our map files to utilise the provided files \textendash{} change \textquotedblleft{}image:\textquotedblright{} entry within launch\_files/map.yaml to reflect location of your map.png.
+I have also made use of several extra pip packages which were tremendous help with dealing with concepts such as Gaussian Probability or array manipulations. Make sure that you have them installed and ready:
+\begin{itemize}
+    \setlength\itemsep{0.1em}
+    \item Scipy (tested on version 1.0.0 / 25)
+    \item Numpy (tested on version 1.13.3)
+\end{itemize}
+If not, be sure to install them using pip. If operating with multiple Python versions, make sure to use the correct version (i.e. pip2 / pip2.7 if using environment with main Python3). 
+Environment used for development:
+\begin{itemize}
+    \setlength\itemsep{0.1em}
+    \item Arch Linux / Ubuntu 16.04
+    \item ROS Kinetic
+    \item Python 2.7.14
+    \item GCC 7.2.0
+\end{itemize}
+
+\subsection{Modifications to the provided files}
+\label{sec:modifications}
+
+It important to mention that I have slightly adjusted map.world file to slightly slow down simulation speed (from 50ms to 100ms) to match real time which ultimately avoids odometry readings discrepancies.
+I have also altered launch file by removing dummy\_localization (as it is no longer needed and has been completely replaced by my own nodes) and appending real\_robot\_pose with rviz\_info which are uniform to use with every developed component.
+
+\subsection{Project Overview}
+\label{sec:overview}
+
+Project consists of two ROS packages and one external file:
+\begin{itemize}
+    \setlength\itemsep{0.1em}
+    \item assessment \textendash{} contains majority of the code produced for the purposes of CS3027.
+    \item add\_gaussian\_noice \textendash{} provided by the course coordinator containing laser scan adjusted by random noise.
+    \item pixeldraw.py (located in assessment/resources) \textendash{} pre-processing script to divide provided map onto cells which are used in path planning (see pathplanning.py module for further explanation).
+\end{itemize}
+And finally, beforementioned assessment package contains following files (later referred as nodes) \textendash{} all located in the scripts folder:
+\begin{itemize}
+    \setlength\itemsep{0.1em}
+    \item real\_robot\_pose.py
+    \item rviz\_info.py
+    \item pathplanning.py
+    \item drive.py
+    \item localization.py
+    \item image\_processing.py
+\end{itemize}
+
+\section{Design Choices}
+\subsection{Map representation}
+To begin this paragraph I wanted to briefly go through the concepts and ideas behind path-planning algorithms which could be utilised in terms of the course. Throughout my research on actual map representation I had looked into various methods such as:
+\begin{itemize}
+    \setlength\itemsep{0.1em}
+    \item Occupancy grid
+    \item Exact cell decomposition
+    \item Approximate cell decomposition
+    \item Potential field model
+\end{itemize}
+Ultimately I have settled for the approximate cell decomposition. One of the biggest turning points for me was the ease of implementation through a simple recursive call on 4 different areas which later could be easily converted to say a map, or graph representation of obtained cells. Due to the performance issues, speed and fact that I only have to perform decomposition only once (since I can assume that the map won't change) I have decided to do it only once and afterwards import the results into my actual ROS node through pickle python library (by compressing the created Graph structure after decomposition).
+\begin{figure}[H]
+    \centering
+    \includegraphics[scale=0.105]{img1}
+    \caption{Representation of decomposed cells}
+\end{figure}
+Figure 1 represents how the map looks like post-decomposition. Every cell represents area where the robot can move freely without any collisions or issues. \textquotedblleft{}Robby\textquotedblright{} can also travel to any of the direct neighbouring cells as it wishes. Everything is based on the recursive call for which pseudo-code is included below:
+\begin{algorithm}[H]
+    \caption{Adaptive cell decomposition.}
+    \begin{algorithmic}[1]
+        \Procedure{Decompose}{$array, depth$}
+            \If{no obstacle in $array$}
+                \State \texttt{Mark $array$ as cell}
+                \State \Return
+            \Else
+                \State{\Call{Decompose}{top left of $array$}}
+                \State{\Call{Decompose}{top right of $array$}}
+                \State{\Call{Decompose}{bottom left of $array$}}
+                \State{\Call{Decompose}{bottom right of $array$}}
+            \EndIf
+        \EndProcedure
+    \end{algorithmic}
+\end{algorithm}
+Nodes and files including logic for path-planning: pathplanning.py, resources/pixeldraw.py
+
+\subsection{Pathplanning}
+Now, I should receive approximately 500 discrete cells \textendash{} which is another advantage of the method over, say, occupancy grid where I would need to consider 1000*800 pixels \textendash{} those values quickly add up and it is important to reduce run-time as it may be crucial when the robot needs to act quickly.
+
+I have utilised the graph and nodes structures that I used for the CS2521 continuous assessment which allows me to easily store each cell, its neighbours and distances to those neighbours. Afterwards implementing any of the path-planning algorithms becomes trivial since I only needed to code a simple A* using Euclidean distance as a heuristic function. All the operations are performed on the occupancy grid array (reshaped from 1d to 2d \textendash{} 800x1000) thanks to the implementation of functions allowing me to easily swap around Map Frame coordinates (e.g x=2.5, y=-3.5) to Occupancy Grid (e.g. row=253, column=575).
+
+Last, but not least, to obtain the shortest path overall (given all goals) I had to implement a brute-force solution in non-deterministic polynomial time by getting every available permutations of those lists, getting shortest path out of all of those permutations and publishing the path to driving node.
+\subsection{Driving}
+As opposed to my friends who were focusing on proportional controllers and driving based on the distance remaining I have taken a slightly different stance which is driving based on the time elapsed. Pseudo-code below represents the through process and algorithm flow when running the node:
+\begin{algorithm}[H]
+    \caption{Driving module pseudo-code.}
+    \begin{algorithmic}[1]
+        \While{time elapsed * speed \textless{}= distance}
+            \State keep moving forward\;
+        \EndWhile
+    \end{algorithmic}
+\end{algorithm}
+One of the issues that I have encountered is the fact that sometimes due to the computing inaccuracies the robot ends up slightly beyond the requested point. I believe it may be caused with the CPU overload and trying to catch up with ROS simulation. The problem probably could be avoided by instead of relying on time, I would base it on distance travelled \textendash{} both approaches have their drawbacks. Pseudo-code above is easily applied to the list of destinations that I have to visit obtained from path-planning module so the implementation becomes trivial. One thing to note is that due to my laptop's capabilities (where a VM performed even worse) I had to decide against using my own localisation solution to help the robot localise itself within the environment, instead I am utilising /base\_pose\_ground\_truth (while still having odom errors enabled which are corrected as-you-go).
+
+\subsection{Localisation}
+That is the part that I am the most proud of. I have managed to fully implement Monte Carlo Localisation as a node in my ROS project. It was probably the most difficult project and I had to consider plenty of approaches to the problem. The biggest issue wasn't choice of localisation method \textendash{} it was the actual act of perception and motion update that caused me the most problems, especially the former as it was exceptionally computational dependant constantly taking massive chunks of my CPU power.
+\begin{figure}[H]
+    \centering
+    \includegraphics[scale=0.3]{img2}
+    \caption{Particles as displayed in Rviz}
+\end{figure}
+To start off, I'm placing 800 random particles across the map (as shown on figure 2) \textendash{} each of them with three properties: X, Y and Theta. Now I needed a way to tell how likely it is for a particle to appear in a given position.
+
+I have considered two methods of performing perception update at all \textendash{} use either Beam Sensor Model or Likelihood Field Model. Unfortunately I didn't quite comprehend the latter so I focused on the beam sensor model which in principle is trivial \textendash{} simply track every pixel that laser beam covers and check occupancy grid to see whether it is obstacle or not. If it is, return the expected distance \textendash{} and keep repeating till you reach the maximum distance which is 3 meters in our case. Once I have obtained my expected reading I referred to the actual \textendash{} obtained from the noisy scanner. Thanks to the access to the add\_gaussian\_noise I read out the properties such as standard deviation which I plugged into SciPy's Probability Density Function so I will get the proportional probability of how likely the reading is.
+
+Now robot casts 30 different laser proximity beams. Due to the precious computation time I had to divide those by 6 leaving me with 5 of them \textendash{} which is more than enough in our environment. By adding all of those probabilities I got a total probability of given particle being at a given point of the map. So now I've got all my particles and their probabilities \textendash{} all is left is sampling. Simply pick 500 particles based on the weighted probability and add them to the next iterations. Remaining 300 are randomised again to allow recovery from errors.
+
+As when it comes to clustering of the particles, the location obtained from my localisation is always based on the particle with the highest probability. Both the actual position and and believed position are printed to the console to check how accurate my reading are and for debugging purposes.
+
+
+% \section{Mark C3-C1}
+% \label{sec:C3C1}
+
+% I have added subjects and couple of extra books making it a total of 13 books by 10 authors. I have also written down and implemented all recommendations making it a total of 38 recommendations. Effects of my efforts can be seen in C3-C1/bookstoreC3C1.owl ontology file.
+% Below I have included notes that I have taken to figure out the recommendations:
+% \begin{lstlisting}[style=nonumbers]
+% PURCHASES PER BOOK
+% Born a Crime - Adam, Beth
+% Fly Fishing - Jeff, David
+% Four Friends - Kate, Adam
+% Getting Things Done - Beth, David 
+% Grey - David, Jeff
+% Killing England - Kate, Adam
+% Killing Patton - Adam, Kate
+% Knowing God by Name - Beth, David
+% Moby Dick - David, Jeff
+% Omoo - Kate, Beth
+% Strength in What Remains - Kate, Adam
+% The Husbands Secret - David, Adam
+% What Alice Forgot - Kate, Jeff
+
+
+% PURCHASES PER CUSTOMER
+% David - Fly Fishing, Getting Things Done, Grey, Knowing God by Name, Moby Dick, The Husbands Secret
+% Beth - Born a Crime, Getting Things Done, Knowing God by Name, Omoo
+% Kate - Four Friends, Killing England, Killing Patton, Omoo, Strength in What Remains, What Alice Forgot
+% Jeff - Fly Fishing, Grey, Moby Dick, What Alice Forgot
+% Adam - Born a Crime, Four Friends, Killing England, Killing Patton, Strength in What Remains, The Husbands Secret
+
+% CUSTOMER LINKS
+% David - Jeff, Beth, Adam
+% Beth - Adam, David, Kate
+% Kate - Adam, Beth
+% Jeff - David
+% Adam - Beth, Kate, David
+
+% RECOMMEDATIONS
+% David - Four Friends, Strength in What Remains, Omoo, Killing England, What Alice Forgot, Born a Crime, Killing Patton
+% Beth - Four Friends, The Husbands Secret, Strength in What Remains, What Alice Forgot, Grey, Killing England, Killing Patton, Moby Dick, Fly Fishing
+% Kate - Moby Dick, Fly Fishing, Born a Crime, Grey, The Husbands Secret, Getting Things Done, Knowing God by Name
+% Jeff - Omoo, Four Friends, The Husbands Secret, Strength in What Remains, Killing England, Killing Patton, Getting Things Done, Knowing God by Name
+% Adam - What Alice Forgot, Moby Dick, Fly Fishing, Knowing God by Name, Getting Things Done, Grey, Omoo
+% \end{lstlisting}
+
+% \section{Mark B3-B1}
+% \label{sec:B3B1}
+% \subsection{Task 1}
+
+% After running the provided Jess script - which I had to slightly modify, by replacing Person with Customer as I have changed the class hierarchy in the very first task, also changed the names to appropriate URIs.
+% \\
+% I have found out that the results are the same as the ones obtained in the previous section, that is 38 recommendations in total based on the purchases made by people buying similar books.
+% \\
+% Below I have included the slightly modified code used to automate this task (also available in B3-B1/task1.txt):
+
+% \begin{lstlisting}[caption={B3-B1/task1.txt}, style=nonumbers]
+% (mapclass http://www.cs4021/bookstore.owl#Person)
+% (mapclass http://www.cs4021/bookstore.owl#Book)
+% (mapclass http://www.cs4021/bookstore.owl#Purchase)
+% (mapclass http://www.cs4021/bookstore.owl#Recommendation)
+
+% (defrule recommend-1
+
+%     (object (is-a http://www.cs4021/bookstore.owl#Customer) (OBJECT ?PersonObject1) (http://www.cs4021/bookstore.owl#hasName ?Person1) (http://www.cs4021/bookstore.owl#hasMadePurchase $? ?Purch1 $?))
+%     (object (is-a http://www.cs4021/bookstore.owl#Purchase) (OBJECT ?Purch1) (http://www.cs4021/bookstore.owl#hasBuyer ?PersonObject1) (http://www.cs4021/bookstore.owl#hasBook $? ?BookObjectA $?))
+
+%     (object (is-a http://www.cs4021/bookstore.owl#Customer) (OBJECT ?PersonObject2) (http://www.cs4021/bookstore.owl#hasName ?Person2) (http://www.cs4021/bookstore.owl#hasMadePurchase $? ?Purch2 $?))
+%     (object (is-a http://www.cs4021/bookstore.owl#Customer) (OBJECT ?PersonObject2) (http://www.cs4021/bookstore.owl#hasName ?Person2) (http://www.cs4021/bookstore.owl#hasMadePurchase $? ?Purch3 $?))
+
+%     (test (neq ?Person1 ?Person2))
+%     (test (neq ?Purch2 ?Purch3))
+
+%     (object (is-a http://www.cs4021/bookstore.owl#Purchase) (OBJECT ?Purch2) (http://www.cs4021/bookstore.owl#hasBuyer ?PersonObject2) (http://www.cs4021/bookstore.owl#hasBook ?BookObjectA))
+%     (object (is-a http://www.cs4021/bookstore.owl#Purchase) (OBJECT ?Purch3) (http://www.cs4021/bookstore.owl#hasBuyer ?PersonObject2) (http://www.cs4021/bookstore.owl#hasBook ?BookObjectB))
+%     (not (object (is-a http://www.cs4021/bookstore.owl#Purchase) (http://www.cs4021/bookstore.owl#hasBuyer ?PersonObject1) (http://www.cs4021/bookstore.owl#hasBook ?BookObjectB)))
+%     (not (object (is-a http://www.cs4021/bookstore.owl#Recommendation) (http://www.cs4021/bookstore.owl#hasBuyer ?PersonObject1) (http://www.cs4021/bookstore.owl#hasBook ?BookObjectB)))
+
+%     (object (is-a http://www.cs4021/bookstore.owl#Book) (OBJECT ?BookObjectA) (http://www.cs4021/bookstore.owl#hasTitle ?titleA))
+%     (object (is-a http://www.cs4021/bookstore.owl#Book) (OBJECT ?BookObjectB) (http://www.cs4021/bookstore.owl#hasTitle ?titleB))
+
+%     =>
+
+%     (printout t "Recommendation for " ?Person1 ": other people that bought \"" ?titleA "\" also bought \"" ?titleB "\"" crlf)
+%     (make-instance of http://www.cs4021/bookstore.owl#Recommendation (http://www.cs4021/bookstore.owl#hasBuyer ?PersonObject1) (http://www.cs4021/bookstore.owl#hasBook ?BookObjectB))
+% )
+% \end{lstlisting}
+
+% \subsection{Task 2}
+% By applying a rule to get recommendations based on the books from the same author I have created 8 recommendations in total:
+% \begin{lstlisting}[style=nonumbers]
+% Recommendation for David: other book by "Liane Moriarty" is "What Alice Forgot"
+% Recommendation for Jeff: other book by "Liane Moriarty" is "The Husbands Secret"
+% Recommendation for Adam: other book by "Liane Moriarty" is "What Alice Forgot"
+% Recommendation for David: other book by "Herman Melville" is "Omoo"
+% Recommendation for Jeff: other book by "Herman Melville" is "Omoo"
+% Recommendation for Kate: other book by "Liane Moriarty" is "The Husbands Secret"
+% Recommendation for Kate: other book by "Herman Melville" is "Moby Dick"
+% Recommendation for Beth: other book by "Herman Melville" is "Moby Dick"
+% \end{lstlisting}
+    
+% To calculate recommendations based on the same author, I have used the following Jess rule. First it grabs all books purchased by a customer, then grabs the author of the given book and places it in ?Person2 variable. Later we go through all the books written by ?Person2 and check whether given book has already been purchased or recommended to our original customer (?Person1). If not, add the positions to recommendations and printout the result.:
+% \begin{lstlisting}[caption={B3-B1/task2.txt}, style=nonumbers]
+% (mapclass http://www.cs4021/bookstore.owl#Person)
+% (mapclass http://www.cs4021/bookstore.owl#Book)
+% (mapclass http://www.cs4021/bookstore.owl#Purchase)
+% (mapclass http://www.cs4021/bookstore.owl#Recommendation)
+
+% (defrule recommend-2
+
+%     (object (is-a http://www.cs4021/bookstore.owl#Customer) (OBJECT ?PersonObject1) (http://www.cs4021/bookstore.owl#hasName ?Person1) (http://www.cs4021/bookstore.owl#hasMadePurchase $? ?Purch1 $?))
+%     (object (is-a http://www.cs4021/bookstore.owl#Purchase) (OBJECT ?Purch1) (http://www.cs4021/bookstore.owl#hasBuyer ?PersonObject1) (http://www.cs4021/bookstore.owl#hasBook $? ?BookObjectA $?))
+
+%     (object (is-a http://www.cs4021/bookstore.owl#Author) (OBJECT ?PersonObject2) (http://www.cs4021/bookstore.owl#hasName ?Person2) (http://www.cs4021/bookstore.owl#hasWritten $? ?BookObjectA $?))
+%     (object (is-a http://www.cs4021/bookstore.owl#Book) (OBJECT ?BookObjectB) (http://www.cs4021/bookstore.owl#hasTitle ?titleA) (http://www.cs4021/bookstore.owl#hasAuthor ?PersonObject2))
+
+%     (test (neq ?BookObjectA ?BookObjectB))
+
+%     (not (object (is-a http://www.cs4021/bookstore.owl#Purchase) (http://www.cs4021/bookstore.owl#hasBuyer ?PersonObject1) (http://www.cs4021/bookstore.owl#hasBook ?BookObjectB)))
+%     (not (object (is-a http://www.cs4021/bookstore.owl#Recommendation) (http://www.cs4021/bookstore.owl#hasBuyer ?PersonObject1) (http://www.cs4021/bookstore.owl#hasBook ?BookObjectB)))
+
+%     =>
+
+%     (printout t "Recommendation for " ?Person1 ": other book by \"" ?Person2 "\" is \"" ?titleA "\"" crlf)
+%     (make-instance of http://www.cs4021/bookstore.owl#Recommendation (http://www.cs4021/bookstore.owl#hasBuyer ?PersonObject1) (http://www.cs4021/bookstore.owl#hasBook ?BookObjectB))
+% )
+% \end{lstlisting}
+
+% \subsection{Task 3}
+% To solve the problem of recommending books based on the same subject, I had to split the problem into two. That is, recommending books from the same category and from child categories. I also had to introduce an extra property - hasChildSubject - to find out subjects that are children of given subject, due to an error with Protege 3.5 which would not allow me to run Jess scripts on the inferred ontology, but rather insist on using the asserted one. The property joins two subjects where one of them is the parent and other of them is considered a "sub-subject".
+
+% First script (task3a) recommends books from the same category. Second scripts (task3b) recommends books from all the child categories. Both scripts first obtain all the books purchased by a customer, then a subject of the given book. Afterwards we obtain all the books with the same subject (task3a) or with the hasChildSubject property (taks3a) and test whether given book has already been purchased or recommended to a given customer. If not, print out the result and add the position to recommendations.
+% \\
+% Code used for both rules available below:
+% \begin{lstlisting}[caption={B3-B1/task3a.txt}, style=nonumbers]
+% (mapclass http://www.cs4021/bookstore.owl#Person)
+% (mapclass http://www.cs4021/bookstore.owl#Book)
+% (mapclass http://www.cs4021/bookstore.owl#Purchase)
+% (mapclass http://www.cs4021/bookstore.owl#Recommendation)
+% (mapclass http://www.cs4021/bookstore.owl#BookSubject)
+% (defrule recommend-3a
+
+%     (object (is-a http://www.cs4021/bookstore.owl#Customer) (OBJECT ?PersonObject1) (http://www.cs4021/bookstore.owl#hasName ?Person1) (http://www.cs4021/bookstore.owl#hasMadePurchase $? ?Purch1 $?))
+%     (object (is-a http://www.cs4021/bookstore.owl#Purchase) (OBJECT ?Purch1) (http://www.cs4021/bookstore.owl#hasBuyer ?PersonObject1) (http://www.cs4021/bookstore.owl#hasBook $? ?BookObjectA $?))
+
+%     (object (is-a http://www.cs4021/bookstore.owl#Book) (OBJECT ?BookObjectA) (http://www.cs4021/bookstore.owl#hasTitle ?titleA) (http://www.cs4021/bookstore.owl#hasSubject $? ?SubjectObject1 $?))
+%     (object (is-a http://www.cs4021/bookstore.owl#Book) (OBJECT ?BookObjectB) (http://www.cs4021/bookstore.owl#hasTitle ?titleB) (http://www.cs4021/bookstore.owl#hasSubject $? ?SubjectObject1 $?))
+
+%     (test (neq ?BookObjectA ?BookObjectB))
+%     (not (object (is-a http://www.cs4021/bookstore.owl#Purchase) (http://www.cs4021/bookstore.owl#hasBuyer ?PersonObject1) (http://www.cs4021/bookstore.owl#hasBook ?BookObjectB)))
+%     (not (object (is-a http://www.cs4021/bookstore.owl#Recommendation) (http://www.cs4021/bookstore.owl#hasBuyer ?PersonObject1) (http://www.cs4021/bookstore.owl#hasBook ?BookObjectB)))
+%     =>
+%     (printout t "Recommendation for " ?Person1 ": recommendation based on same genre: " ?titleB crlf)
+%     (make-instance of http://www.cs4021/bookstore.owl#Recommendation (http://www.cs4021/bookstore.owl#hasBuyer ?PersonObject1) (http://www.cs4021/bookstore.owl#hasBook ?BookObjectB))
+
+% )
+% \end{lstlisting}
+% \begin{lstlisting}[caption={B3-B1/task3b.txt}, style=nonumbers]
+% (mapclass http://www.cs4021/bookstore.owl#Person)
+% (mapclass http://www.cs4021/bookstore.owl#Book)
+% (mapclass http://www.cs4021/bookstore.owl#Purchase)
+% (mapclass http://www.cs4021/bookstore.owl#Recommendation)
+% (mapclass http://www.cs4021/bookstore.owl#BookSubject)
+% (defrule recommend-3b
+
+%     (object (is-a http://www.cs4021/bookstore.owl#Customer) (OBJECT ?PersonObject1) (http://www.cs4021/bookstore.owl#hasName ?Person1) (http://www.cs4021/bookstore.owl#hasMadePurchase $? ?Purch1 $?))
+%     (object (is-a http://www.cs4021/bookstore.owl#Purchase) (OBJECT ?Purch1) (http://www.cs4021/bookstore.owl#hasBuyer ?PersonObject1) (http://www.cs4021/bookstore.owl#hasBook $? ?BookObjectA $?))
+
+%     (object (is-a http://www.cs4021/bookstore.owl#Book) (OBJECT ?BookObjectA) (http://www.cs4021/bookstore.owl#hasSubject $? ?SubjectObject1 $?))
+
+%     (object (OBJECT ?SubjectObject1) (http://www.cs4021/bookstore.owl#hasChildSubject $? ?SubjectObject2 $?))
+
+%     (object (is-a http://www.cs4021/bookstore.owl#Book) (OBJECT ?BookObjectB) (http://www.cs4021/bookstore.owl#hasTitle ?titleB) (http://www.cs4021/bookstore.owl#hasSubject $? ?SubjectObject2 $?))
+
+%     (test (neq ?BookObjectA ?BookObjectB))
+%     (not (object (is-a http://www.cs4021/bookstore.owl#Purchase) (http://www.cs4021/bookstore.owl#hasBuyer ?PersonObject1) (http://www.cs4021/bookstore.owl#hasBook ?BookObjectB)))
+%     (not (object (is-a http://www.cs4021/bookstore.owl#Recommendation) (http://www.cs4021/bookstore.owl#hasBuyer ?PersonObject1) (http://www.cs4021/bookstore.owl#hasBook ?BookObjectB)))
+
+%     =>
+
+%     (printout t "Recommending for " ?Person1 ": recommendation based on child genre: " ?titleB crlf)
+%     (make-instance of http://www.cs4021/bookstore.owl#Recommendation (http://www.cs4021/bookstore.owl#hasBuyer ?PersonObject1) (http://www.cs4021/bookstore.owl#hasBook ?BookObjectB))
+
+% )
+% \end{lstlisting}
+% \section{Mark A5-A1}
+% \label{sec:A5A1}
+% \subsection{Task 1,2\&3}
+% After loading the bookstoreTest3.owl into Protege 4.3 and starting FaCT++ 1.6.5 reasoner I have noticed that a couple of inferred properties were added to some authors as visible on Figure 2.
+% \\\\
+% Additionally given hasWritten properties were inferred after classifying the taxonomy.
+% \begin{itemize}  
+% \item Frank\_Herbert hasWritten Dune
+% \item Frank\_Herbert hasWritten Dune2
+% \item Hawking hasWritten A\_Brief\_History\_of\_Time
+% \item Herman\_Melville hasWritten Moby\_Dick
+% \item J\_R\_Hartley hasWritten Fly\_Fishing
+% \item Roger\_Penrose hasWritten The\_Emperors\_New\_Mind
+% \item Tolkien hasWritten Fellow\_of\_the\_Ring
+% \item Tolkien hasWritten Twin\_Tower
+% \item Tolkien hasWritten the\_Hobbit
+% \item Tolkien hasWritten Return\_of\_the\_King
+% \end{itemize}
+
+% \subsection{Task 4\&5}
+% I have successfully implemented the inverse object property expansion rule through Java and OWLAPI. I'm getting exactly same results as with manually checking through FaCT++, that is 10 hasWritten relations, see Figure 3 to inspect Java output.
+
+% Below you can also inspect the code I have written to obtain such results. It is a very simple script that iterates over all possible connections, in the next section I have also included a pseudo-code describing the program flow. For my implementation I have used OWLAPI 3.4.5.
+
+% \begin{lstlisting}[frame=single, caption={invRule Java implementation}]
+% private boolean invRule(OWLIndividual node) {
+%     boolean changed = false;
+%     for (OWLOntology ontology : ontologies) {
+%         for (HashMap.Entry<OWLObjectPropertyExpression, Set<OWLIndividual>> entry : node.getObjectPropertyValues(ontology).entrySet()) {
+%             for (OWLObjectPropertyExpression s : entry.getKey().asOWLObjectProperty().getInverses(ontology)) {
+%                 for (OWLIndividual object : entry.getValue()) {
+%                     if (edges.get(object).get(s) == null) {
+%                         HashSet<OWLIndividual> mySet = new HashSet<>();
+%                         mySet.add(node);
+%                         edges.get(object).put(s, mySet);
+%                         changed = true;
+%                     } else if (!edges.get(object).get(s).contains(node)) {
+%                         edges.get(object).get(s).add(node);
+%                         changed = true;
+%                     }
+%                 }
+%             }
+%         }
+%     }
+%     return changed;
+% }
+% \end{lstlisting}
+
+
+% \begin{figure}[H]
+% \caption{hasWritten property in Protege 4.3}
+% \centering
+% \includegraphics[scale=0.5]{img2}
+% \end{figure}
+% \begin{figure}[H]
+% \caption{hasWritten property using Java with OWLAPI}
+% \centering
+% \includegraphics[scale=1]{img3}
+% \end{figure}
+
+% \begin{tcolorbox}[blanker,float=tbp,
+%     grow to left by=2cm,grow to right by=2cm]
+%   \begin{algorithm}[H]
+%     \caption{invRule pseudo-code}\label{euclid}
+%     \begin{algorithmic}[1]
+%         \Procedure{invRule}{$subject, ontologies, edges$}
+%         \State $changed\gets false$
+%         \For{\texttt{$ontology$ in $ontologies$}}
+%             \For{\texttt{$property HashMap$ in $propertyValues$ of $subject$}}
+%             \For{\texttt{$inverseProperty$ in $inverseProperties$ of $property HashMap$}}
+%                 \For{\texttt{$object$ in $property HashMap$}}
+%                 \If{$edges$ doesn't have $inverseProperty$ between $object$ and $subject$ }
+%                     \State \texttt{Add a new HashSet to $edges$ $inverseProperty$ between $object$ and $subject$}
+%                     \State $changed\gets true$
+%                 \ElsIf{connection in $edges$ between $object$ and $subject$ doesn't include $inverseProperty$}
+%                     \State \texttt{Append a connection between $object$ and $subject$}
+%                     \State $changed\gets true$
+%                 \EndIf 
+%                 \EndFor 
+%             \EndFor 
+%             \EndFor  
+%         \EndFor        
+%         \State \textbf{return} $changed$
+%         \EndProcedure
+%     \end{algorithmic}
+%    \end{algorithm}
+% \end{tcolorbox}
+
+
+
+\end{document}
